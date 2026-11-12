@@ -85,7 +85,7 @@ def test_deadline_window_is_14_days(desk):
     assert not any("学会" in i for i in items)     # 終わっている
 
 
-def _accept(repo, branch, dirname, text="Accepted: 2027-10-10 佐藤\n", on_branch=True):
+def _accept(repo, branch, dirname, text="Accepted: 2027-10-10 山田太郎\n", on_branch=True):
     run_git(repo, "checkout", "-q", "-b", branch)
     write(repo / "2027" / dirname / "review.md", text)
     run_git(repo, "add", "-A")

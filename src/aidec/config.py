@@ -28,6 +28,8 @@ def data_dir() -> Path:
     if not isinstance(value, str) or not value:
         raise ConfigError(f"設定ファイル {path} に data_dir が無い")
     d = Path(value).expanduser()
+    if not d.is_absolute():
+        raise ConfigError(f"設定ファイル {path} の data_dir {value} が絶対パスではない")
     if not d.is_dir():
         raise ConfigError(f"設定ファイル {path} の data_dir {d} がディレクトリではない")
     return d

@@ -1,6 +1,6 @@
 ---
 name: brief
-description: Use when 佐藤 asks what today or tomorrow looks like, in the session whose working directory is the aidec data_dir — 「今日の予定」「明日は何をする」「朝の確認」「今夜のうちに明日の確認」「今日の授業は」「明日進める準備は」.
+description: Use when the user asks what today or tomorrow looks like, in the session whose working directory is the aidec data_dir — 「今日の予定」「明日は何をする」「朝の確認」「今夜のうちに明日の確認」「今日の授業は」「明日進める準備は」.
 ---
 
 # brief
@@ -14,11 +14,12 @@ description: Use when 佐藤 asks what today or tomorrow looks like, in the sess
 ## 手順
 
 1. `aidec brief <年度>` を実行する。夜に明日を聞かれたら `--evening`、日付の指定は `--date YYYY-MM-DD`。年度は 4 月始まり（2026-10 なら 2026、2027-02 も 2026）
-2. task-manage スキルの手順で、その日の分を一覧にし、lontano の分として添える（コマンドはここに写さない）
+2. 利用者のタスク管理（task-manage スキルがあればその手順）で、その日の分を一覧にして添える（コマンドはここに写さない）
 3. 結果をまとめて見せる
 
 ## 見せ方
 
-- 準備の候補は「候補」として、理由（授業日が近い、受け入れが未了、会議や出張で時間が少ない）と並べる。決めるのは佐藤。何を先にやるべきかは言わない
+- 準備の候補は「候補」として、理由（授業日が近い、受け入れが未了、会議や出張で時間が少ない）と並べる。決めるのは利用者。何を先にやるべきかは言わない
+- 上がってきた相談は、決まったら inbox/done/ に移してコミットする（確認してから）
 - 時間の見積りは書かない
 - 授業レポの clone は fetch していない。手元が古いかもしれないことを一言添える

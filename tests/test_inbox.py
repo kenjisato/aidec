@@ -35,3 +35,12 @@ def test_broken_file_is_named_and_others_load(tmp_path):
 def test_crlf_in_text_is_normalised(tmp_path):
     p = inbox.write(tmp_path, _item(text="a\r\nb\rc"))
     assert b"\r" not in p.read_bytes()
+
+
+def test_done_subdirectory_is_not_loaded(tmp_path):
+    inbox.write(tmp_path, _item())
+    done = _item("20271101-macro-mon-000000")
+    (tmp_path / "inbox" / "done").mkdir()
+    write(tmp_path / "inbox" / "done" / f"{done.ref}.md", "---\nref: x\n---\nold\n")
+    got, bad = inbox.load(tmp_path)
+    assert [i.ref for i in got] == ["20271105-macro-mon-a1b2c3"] and bad == []

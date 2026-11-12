@@ -1,6 +1,6 @@
 ---
 name: upcoming
-description: Use when 佐藤 asks what is coming up — 「今後の予定」「来週何がある？」「今後3週間の予定表」「予定を見せて」「この先の授業と準備」 — in the session whose working directory is the aidec data_dir.
+description: Use when the user asks what is coming up — 「今後の予定」「来週何がある？」「今後3週間の予定表」「予定を見せて」「この先の授業と準備」 — in the session whose working directory is the aidec data_dir.
 ---
 
 # upcoming
@@ -28,4 +28,5 @@ aidec week <年度> --table --days <日数> ; aidec check <年度>
 - `check` の行は表の後に「気になる点」として短く添える。「（注意）」の付いたもの（研究日など）は知らせるだけでよい
 - 準備の重さは判断しない。並べるだけにする
 - 本業の見積り時間は書かない
+- 上がってきた相談は、決まったら inbox/done/ に移してコミットする（確認してから）
 - 略称は `courses.yaml` の `label`。新しい略称が要るときは、データのレポで決めて `label` に書く

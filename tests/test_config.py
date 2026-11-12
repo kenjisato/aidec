@@ -57,3 +57,10 @@ def test_missing_directory(tmp_path, monkeypatch):
     with pytest.raises(ConfigError, match="gone") as e:
         data_dir()
     assert str(f) in str(e.value)
+
+
+def test_relative_data_dir_is_rejected(tmp_path, monkeypatch):
+    f = _config(tmp_path, monkeypatch, "data_dir: data\n")
+    with pytest.raises(ConfigError, match="絶対パス") as e:
+        data_dir()
+    assert str(f) in str(e.value)

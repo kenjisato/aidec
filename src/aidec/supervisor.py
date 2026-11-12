@@ -98,7 +98,7 @@ def _detached_push(repo: Path) -> None:
         kwargs["creationflags"] = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
     else:
         kwargs["start_new_session"] = True
-    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}
     try:
         subprocess.Popen(["git", "-C", str(repo), "push", "-q"], env=env, **kwargs)
     except OSError:

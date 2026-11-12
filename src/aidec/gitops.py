@@ -11,7 +11,9 @@ class GitError(RuntimeError):
 
 
 def git(repo: Path, *args: str) -> str:
-    p = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, encoding="utf-8")
+    # リモートに触れても資格情報の窓を出さない（Git Credential Manager を含む）
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}
+    p = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, encoding="utf-8", env=env)
     if p.returncode != 0:
         raise GitError(f"git {' '.join(args)} が失敗した（{repo}）: {p.stderr.strip()}")
     return p.stdout
