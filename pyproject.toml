@@ -3,6 +3,8 @@ name = "aidec"
 version = "0"
 description = "個人の秘書道具: 予定の一覧、朝の知らせ、授業レポの上位コマンド"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = ["ruamel.yaml>=0.18"]
 
