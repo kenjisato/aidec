@@ -46,7 +46,7 @@ def section(out, head):
         if ln.startswith("## "):
             on = ln.startswith(f"## {head}")
             continue
-        if on and ln:
+        if on and ln and ln != brief.FOOTER:
             lines.append(ln)
     return lines
 
@@ -131,20 +131,53 @@ def test_candidates_stop_at_21_days(desk, ghq):
 
 def test_without_team_yaml_prep_on_decides(desk):
     # seminar-wed は prep_on: [tue]。10/19（火）に第 4 回（10/20）の準備
-    out = run(desk, "--date", "2027-10-19")
-    cands = section(out, "準備の候補")
-    assert [c for c in cands if "seminar-wed" in c] and "seminar-wed 第 4 回" in " ".join(cands)
-    # 準備日でない日は出ない。macro-mon は prep_on が無いので出ない
-    out = run(desk, "--date", "2027-10-21")
-    assert not any("seminar-wed" in c for c in section(out, "準備の候補"))
-    assert not any("マクロ月" in c for c in section(run(desk, "--date", "2027-10-19"), "準備の候補"))
-
-
-def test_busy_day_note(desk):
     cands = section(run(desk, "--date", "2027-10-19"), "準備の候補")
-    assert any("使える時間が少ない" in c for c in cands)          # 10/19 は学会の最中
+    assert cands == ["- この日は会議・出張があり、使える時間が少ない", "- seminar-wed 第 4 回（10/20（水））"]
+    # 準備日でない日は出ない。macro-mon は prep_on が無いので出ない
+    assert section(run(desk, "--date", "2027-10-21"), "準備の候補") == ["- なし"]
+
+
+def test_busy_note_is_said_once(desk):
+    cands = section(run(desk, "--date", "2027-10-19"), "準備の候補")
+    assert [c for c in cands if "使える時間が少ない" in c] == ["- この日は会議・出張があり、使える時間が少ない"]
     cands = section(run(desk, "--date", "2027-10-26"), "準備の候補")
     assert not any("使える時間が少ない" in c for c in cands)
+
+
+def _team_commit(repo, text):
+    write(repo / "2027" / "team.yaml", text)
+    run_git(repo, "add", "-A")
+    run_git(repo, "commit", "-q", "-m", "team")
+
+
+def test_made_up_session_is_a_candidate_with_the_makeup_date(desk, ghq):
+    from aidec.schedule import build_part, write_part
+    yd = load_year(desk / "2027")
+    mon = yd.courses[0]
+    p = ghq / mon.repo / "2027" / "schedule.yaml"
+    write_part(p, build_part(mon, yd.calendar_for(mon), yd.events, "x"))
+    write(p, p.read_text(encoding="utf-8").replace(
+        "changes: []\n", "changes:\n  - {n: 5, cancel: true, makeup: 2027-10-23}\n"))
+    _team_commit(_mon(ghq), "sessions: {base: main}\n")
+    cands = section(run(desk, "--date", "2027-10-18"), "準備の候補")
+    assert "- マクロ月 第 5 回（10/23（土））" in cands
+    assert not any("（10/25（月））" in c for c in cands)
+
+
+def test_unreadable_base_is_reported_not_listed(desk, ghq):
+    _team_commit(_mon(ghq), "sessions: {base: nosuch}\n")
+    cands = section(run(desk, "--date", "2027-10-18"), "準備の候補")
+    assert "- マクロ月: 枝 nosuch を読めない（受け入れを判定できない）" in cands
+    assert not any(c.startswith("- マクロ月 第") for c in cands)
+
+
+def test_acceptance_uses_sessions_dir_pattern(desk, ghq):
+    repo = _mon(ghq)
+    _team_commit(repo, "sessions: {base: develop, dir: 's{nn}'}\n")
+    _accept(repo, "develop", "s05")
+    cands = section(run(desk, "--date", "2027-10-18"), "準備の候補")
+    assert not any("マクロ月 第 5 回" in c for c in cands)
+    assert any("マクロ月 第 6 回" in c for c in cands)
 
 
 def test_inbox_and_footer(desk):

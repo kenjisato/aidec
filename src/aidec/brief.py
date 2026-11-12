@@ -65,27 +65,41 @@ def _upcoming_events(yd: YearData, day: date) -> list[str]:
     return [text for _, text in sorted(items, key=lambda x: x[0])]
 
 
-def _candidates(yd: YearData, c: Course, ghq: Path, day: date) -> list[tuple[date, int]]:
-    """準備の候補の (授業日, 回)。team.yaml に base があれば受け入れ、無ければ prep_on で決める。"""
+def _candidates(yd: YearData, c: Course, ghq: Path, day: date) -> tuple[list[tuple[date, int]], str | None]:
+    """準備の候補の (授業日, 回) と、判定できなかったときの一行。
+
+    team.yaml に base があれば受け入れで、無ければ prep_on で決める。
+    """
     ss, _ = _sessions(yd, c, ghq)
     ydir = ghq / c.repo / str(yd.year) if c.repo else None
     doc = courserepo.team(ydir) if ydir else {}
     base = courserepo.base_branch(doc)
     if base is None:
         held = {s.n: s.date for s in ss if s.date is not None}
-        return [(held[n], n) for d, n in prep_days(ss, c.prep_on) if d == day]
+        return [(held[n], n) for d, n in prep_days(ss, c.prep_on) if d == day], None
+    repo = ghq / c.repo
+    try:
+        gitops.git(repo, "rev-parse", "--verify", "-q", f"{base}^{{commit}}")
+    except gitops.GitError:
+        return [], f"- {c.name}: 枝 {base} を読めない（受け入れを判定できない）"
     pattern = courserepo.layout(ydir, doc)[0]
     end = day + timedelta(days=PREP_DAYS)
     return sorted((s.date, s.n) for s in ss
-                  if s.date is not None and not s.cancelled and day <= s.date <= end
-                  and not _accepted(ghq / c.repo, yd.year, base, courserepo.session_dir(pattern, s.n)))
+                  if s.date is not None and day <= s.date <= end
+                  and not _accepted(repo, yd.year, base, courserepo.session_dir(pattern, s.n))), None
 
 
 def _prep_candidates(yd: YearData, ghq: Path, day: date) -> list[str]:
     busy = any(e.kind != "deadline" and e.covers(day) for e in yd.events)
-    found = [(d, c.name, n) for c in yd.courses for d, n in _candidates(yd, c, ghq, day)]
-    return [f"- {name} 第 {n} 回（{_md_wd(d)}）" + ("　使える時間が少ない" if busy else "")
-            for d, name, n in sorted(found)]
+    found, warnings = [], []
+    for c in yd.courses:
+        cands, warning = _candidates(yd, c, ghq, day)
+        found += [(d, c.name, n) for d, n in cands]
+        if warning:
+            warnings.append(warning)
+    lines = ["- この日は会議・出張があり、使える時間が少ない"] if busy else []
+    lines += warnings
+    return lines + [f"- {name} 第 {n} 回（{_md_wd(d)}）" for d, name, n in sorted(found)]
 
 
 def brief_report(yd: YearData, ghq: Path, root: Path, day: date) -> str:
