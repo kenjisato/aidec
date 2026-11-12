@@ -54,6 +54,14 @@ def test_ask_without_hit_lists_course_maps(desk, ghq):
     assert str(ghq / "github.com/example/macro-mon/2027/course-map.md") in res["answer"]
 
 
+def test_ask_with_a_clone_but_no_map_says_so(desk, ghq):
+    mon = ghq / "github.com" / "example" / "macro-mon" / "2027"
+    (mon / "course-map.md").unlink()
+    (mon / "05" / "session.yaml").unlink()
+    res = supervisor.handle(req(verb="ask", text="ゲーム理論"), desk, NOW)
+    assert "今の枝" in res["answer"] and "レポが無い" not in res["answer"]
+
+
 @pytest.mark.parametrize("bad", [
     {"protocol": 2}, {"verb": "x"}, {"text": ""}, {"text": " \n"}, {"course": None},
     {"course": "../x"}, {"course": "a b"}, {"class": "../A"}])

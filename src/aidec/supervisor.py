@@ -59,7 +59,9 @@ def _ask(text: str, data: Path) -> str:
     words = _words(text)
     hits: list[str] = []
     maps: list[str] = []
+    seen = 0
     for cid, name, ydir in _course_repos(data):
+        seen += 1
         pattern, cmap = _layout(ydir)
         if cmap.is_file():
             maps.append(f"{name}: {cmap}")
@@ -83,6 +85,8 @@ def _ask(text: str, data: Path) -> str:
         return "\n".join(hits[:_MAX_HITS])
     if maps:
         return "該当なし。探す場所の見当（各授業の course-map.md）:\n" + "\n".join(maps)
+    if seen:
+        return "該当なし。手元の授業レポの今の枝に course-map.md も session.yaml の題も無い"
     return "該当なし。手元に授業のレポが無い"
 
 
