@@ -107,5 +107,5 @@ def ghq(tmp_path, git_env, monkeypatch):
     root = tmp_path / "ghq"
     for name in ("macro-mon", "seminar-wed"):
         make_repo(root / "github.com" / "example" / name, tmp_path / "remotes" / f"{name}.git")
-    monkeypatch.setenv("WORKDESK_GHQ_ROOT", str(root))
+    monkeypatch.setenv("AIDEC_GHQ_ROOT", str(root))
     return root

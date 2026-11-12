@@ -1,12 +1,10 @@
 import os
 import subprocess
-from datetime import date
 
 import pytest
 
 from conftest import run_git, write
 from aidec import issue
-from aidec.requests import load_requests
 
 
 def course_repo(ghq, name):
@@ -29,21 +27,15 @@ def test_first_issue(workdesk_root, ghq):
     assert run_git(repo, "show", "--name-only", "--format=", "HEAD").split() == ["2027/schedule.yaml"]
     assert "?? notes.md" in run_git(repo, "status", "--porcelain")
     assert run_git(repo, "rev-parse", "HEAD") == run_git(repo, "rev-parse", "origin/main")
-    # 控えと依頼を workdesk でコミットしている
+    # 控えを workdesk でコミットしている
     files = run_git(workdesk_root, "show", "--name-only", "--format=", "HEAD").split()
-    assert files == ["2027/issued/macro-mon.yaml", "requests/2027-09-01-macro-mon.md"]
-    (req,) = load_requests(workdesk_root / "requests")
-    assert (req.to, req.status, req.dates, req.decide_by) == (
-        "macro-mon", "open", [date(2027, 10, 18), date(2027, 11, 8)], date(2027, 10, 11))
-    assert "10/18（第 4 回）: 学会（○○）（10/18〜10/20）" in req.body
-    assert "11/8（第 7 回）: 休講（暴風警報による全学休講）" in req.body
+    assert files == ["2027/issued/macro-mon.yaml"]
 
 
 def test_all_courses_by_default(workdesk_root, ghq):
     assert run_issue(workdesk_root, "--today", "2027-09-01") == 0
     for name in ("macro-mon", "seminar-wed"):
         assert (course_repo(ghq, name) / "2027" / "schedule.yaml").exists()
-    assert len(load_requests(workdesk_root / "requests")) == 2
 
 
 def test_second_issue_with_nothing_new(workdesk_root, ghq):
@@ -52,24 +44,6 @@ def test_second_issue_with_nothing_new(workdesk_root, ghq):
     before = run_git(repo, "rev-parse", "HEAD")
     assert run_issue(workdesk_root, "--course", "macro-mon", "--today", "2027-09-02") == 0
     assert run_git(repo, "rev-parse", "HEAD") == before              # issued だけのコミットを作らない
-    assert len(load_requests(workdesk_root / "requests")) == 1
-
-
-def test_new_fact_makes_one_new_request(workdesk_root, ghq, year_dir):
-    run_issue(workdesk_root, "--course", "macro-mon", "--today", "2027-09-01")
-    with open(year_dir / "events.yaml", "a", encoding="utf-8", newline="\n") as f:
-        f.write("- {date: 2027-12-06, kind: side_job, title: 集中講義}\n")
-    run_git(workdesk_root, "commit", "-q", "-am", "予定を足す")
-    assert run_issue(workdesk_root, "--course", "macro-mon", "--today", "2027-09-10") == 0
-    new = [r for r in load_requests(workdesk_root / "requests") if r.issued == date(2027, 9, 10)]
-    assert [r.dates for r in new] == [[date(2027, 12, 6)]]
-
-
-def test_past_dates_get_no_request(workdesk_root, ghq):
-    run_issue(workdesk_root, "--course", "macro-mon", "--today", "2027-11-01")
-    (req,) = load_requests(workdesk_root / "requests")
-    assert req.dates == [date(2027, 11, 8)]
-    assert req.decide_by == date(2027, 11, 1)                        # 7 日前は過去なので今日
 
 
 def test_keeps_changes_written_by_course(workdesk_root, ghq):
@@ -128,7 +102,6 @@ def test_stops_on_uncommitted_schedule(workdesk_root, ghq, capsys):
 def test_dry_run_writes_nothing(workdesk_root, ghq, capsys):
     assert run_issue(workdesk_root, "--dry-run", "--today", "2027-09-01") == 0
     assert not (course_repo(ghq, "macro-mon") / "2027").exists()
-    assert not (workdesk_root / "requests").exists()
     out = capsys.readouterr().out
     assert "macro-mon" in out and "第 4 回 10/18" in out and "学会（○○）" in out
 
@@ -166,11 +139,9 @@ def test_course_push_failure_is_retried(workdesk_root, ghq):
     repo = course_repo(ghq, "macro-mon")
     hook = fail_push(repo)
     assert run_issue(workdesk_root, "--course", "macro-mon", "--today", "2027-09-01") == 1
-    assert not (workdesk_root / "requests").exists()                # 届いていないので依頼も出さない
     hook.unlink()
     assert run_issue(workdesk_root, "--course", "macro-mon", "--today", "2027-09-01") == 0
     assert run_git(repo, "rev-parse", "HEAD") == run_git(repo, "rev-parse", "origin/main")
-    assert len(load_requests(workdesk_root / "requests")) == 1
 
 
 def test_workdesk_push_failure_is_retried(workdesk_with_remote, ghq):
@@ -188,5 +159,4 @@ def test_pulls_workdesk_before_issuing(workdesk_with_remote, ghq, tmp_path):
     run_git(tmp_path, "clone", "-q", str(tmp_path / "remotes" / "workdesk.git"), str(b))
     assert issue.main(["2027", "--root", str(b), "--course", "macro-mon", "--today", "2027-09-01"]) == 0
     assert run_issue(a, "--course", "macro-mon", "--today", "2027-09-01") == 0
-    assert len(load_requests(a / "requests")) == 1
     assert run_git(a, "rev-parse", "HEAD") == run_git(a, "rev-parse", "@{u}")

@@ -52,7 +52,7 @@ def test_pull_that_cannot_fast_forward_fails(tmp_path, git_env):
 
 
 def test_ghq_root_from_env(tmp_path, monkeypatch):
-    monkeypatch.setenv("WORKDESK_GHQ_ROOT", str(tmp_path))
+    monkeypatch.setenv("AIDEC_GHQ_ROOT", str(tmp_path))
     assert gitops.ghq_root() == tmp_path
 
 

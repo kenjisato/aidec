@@ -240,25 +240,6 @@ def _change_map(c: Change) -> CommentedMap:
     return yamlio.flow_map(d)
 
 
-def write_reviewed(path: Path, course: str, changes: list[Change], course_sha: str, day: date) -> None:
-    """workdesk が見直したときの changes の控え。check が、報告の無い変更を見つけるのに使う。"""
-    data = CommentedMap()
-    data["course"] = course
-    data["reviewed"] = day
-    data["course_commit"] = course_sha
-    data["changes"] = CommentedSeq(_change_map(c) for c in sorted(changes, key=lambda c: c.n))
-    yamlio.dump(data, path)
-
-
-def read_reviewed(path: Path) -> list[Change] | None:
-    if not path.exists():
-        return None
-    data = _load(path)
-    if not isinstance(data, dict):
-        raise ScheduleError(f"{path}: 対応づけになっていない")
-    return _parse_changes(data.get("changes"), str(path))
-
-
 def load_schedule(path: Path) -> tuple[WorkdeskPart, list[Change]]:
     data = _load(path)
     part = _part_from_map(data, str(path))

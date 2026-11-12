@@ -12,10 +12,7 @@ from . import gitops
 from .cli import KNOWN_ERRORS, error, setup_console
 from .config import data_dir
 from .data import Course, YearData, load_year
-from .reports import load_reports
-from .requests import Request, load_requests
-from .schedule import (Change, ScheduleError, WorkdeskPart, build_part, effective_sessions, load_schedule,
-                       read_reviewed)
+from .schedule import Change, ScheduleError, WorkdeskPart, build_part, effective_sessions, load_schedule
 
 
 @dataclass(frozen=True)
@@ -96,28 +93,7 @@ def check_research_days(course_id: str, prep_on: tuple[str, ...], changes: list[
     return out
 
 
-def check_reported(course_id: str, changes: list[Change], reviewed: list[Change] | None,
-                   pending: bool) -> list[Problem]:
-    """見直した控えと今の changes が違うのに、その授業からの報告が無いもの。"""
-    before = {c.n: c for c in (reviewed or [])}
-    now = {c.n: c for c in changes}
-    diff = sorted(n for n in before.keys() | now.keys() if before.get(n) != now.get(n))
-    which = "・".join(f"第 {n} 回" for n in diff)
-    if pending:
-        return [Problem(course_id, "unreviewed", None,
-                        f"報告が届いている{f'（{which} の変更）' if diff else ''}。workdesk-review で見直す", soft=True)]
-    if not diff:
-        return []
-    return [Problem(course_id, "unreported", None,
-                    f"{which} の changes が見直した版と違うのに、報告が無い。授業レポで workdesk-report を使う")]
-
-
-def check_requests(reqs: list[Request], today: date) -> list[Problem]:
-    return [Problem(r.to, "overdue", r.decide_by, f"依頼 {r.id} の期限 {_md(r.decide_by)} を過ぎた")
-            for r in reqs if r.status == "open" and r.decide_by < today]
-
-
-def course_problems(yd: YearData, course: Course, ghq: Path, pending: bool) -> tuple[list[Problem], list[Change] | None]:
+def course_problems(yd: YearData, course: Course, ghq: Path) -> tuple[list[Problem], list[Change] | None]:
     """一つの授業のぶつかりと、読めたなら今の changes。"""
     cal = yd.calendar_for(course)
     path = ghq / course.repo / str(yd.year) / "schedule.yaml"
@@ -131,36 +107,29 @@ def course_problems(yd: YearData, course: Course, ghq: Path, pending: bool) -> t
     computed = build_part(course, cal, yd.events, current.issued)
     out = check_course(course.id, cal, computed, current, changes)
     out += check_research_days(course.id, course.prep_on, changes, yd.research_days)
-    try:
-        reviewed = read_reviewed(yd.dir / "reviewed" / f"{course.id}.yaml")
-    except ScheduleError as e:
-        return out + [Problem(course.id, "bad_schedule", None, str(e))], changes
-    return out + check_reported(course.id, changes, reviewed, pending), changes
+    return out, changes
 
 
-def run_check(root: Path, year: int, ghq: Path, today: date) -> list[Problem]:
+def run_check(root: Path, year: int, ghq: Path) -> list[Problem]:
     yd = load_year(root / str(year))
     out: list[Problem] = []
-    pending = {r.frm for r in load_reports(root / "inbox")}
     for cal in yd.calendars.values():
         out += check_calendar(cal)
     for course in yd.courses:
         if course.repo is not None:
-            out += course_problems(yd, course, ghq, course.id in pending)[0]
-    out += check_requests(load_requests(root / "requests"), today)
+            out += course_problems(yd, course, ghq)[0]
     return out
 
 
 def main(argv: list[str] | None = None) -> int:
     setup_console()
-    ap = argparse.ArgumentParser(prog="check", description="機械で判定できるぶつかりを出す")
+    ap = argparse.ArgumentParser(prog="aidec check", description="機械で判定できるぶつかりを出す")
     ap.add_argument("year", type=int)
-    ap.add_argument("--today", type=date.fromisoformat, default=date.today())
     ap.add_argument("--root", type=Path, default=None, help=argparse.SUPPRESS)
     args = ap.parse_args(argv)
     try:
         args.root = args.root or data_dir()
-        problems = run_check(args.root, args.year, gitops.ghq_root(), args.today)
+        problems = run_check(args.root, args.year, gitops.ghq_root())
     except KNOWN_ERRORS as e:
         error(str(e))
         return 1

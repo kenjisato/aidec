@@ -1,4 +1,4 @@
-"""週ごとの一覧。授業の各回、出張・締め切り、prep の期間、未決の依頼を並べる。"""
+"""週ごとの一覧。授業の各回、出張・締め切り、prep の期間を並べる。"""
 from __future__ import annotations
 
 import argparse
@@ -12,7 +12,6 @@ from . import gitops
 from .cli import KNOWN_ERRORS, error, setup_console
 from .config import data_dir
 from .data import Course, YearData, load_year
-from .requests import Request, load_requests
 from .schedule import ScheduleError, Session, build_part, effective_sessions, load_schedule
 
 _JP_WD = "月火水木金土日"
@@ -68,7 +67,7 @@ def _overlaps(a: date, b: date, ws: date, we: date) -> bool:
     return a <= we and b >= ws
 
 
-def week_report(yd: YearData, ghq: Path, reqs: list[Request], start: date, weeks: int) -> str:
+def week_report(yd: YearData, ghq: Path, start: date, weeks: int) -> str:
     sessions = {c.id: _sessions(yd, c, ghq) for c in yd.courses}
     first = start - timedelta(days=start.weekday())
     blocks = []
@@ -106,13 +105,6 @@ def week_report(yd: YearData, ghq: Path, reqs: list[Request], start: date, weeks
             if prep and _overlaps(prep[0], prep[1], ws, we):
                 d = max(prep[0], ws)
                 items.append((d, 2, f"{_md(d)} 準備を軽くしたい期間（{_md(e.date)} {e.title}の前 {e.prep_weeks} 週）"))
-        for r in reqs:
-            if r.status != "open":
-                continue
-            hits = [d for d in [r.decide_by, *r.dates] if ws <= d <= we]
-            if hits:
-                d = min(hits)
-                items.append((d, 3, f"{_md(d)} 未決の依頼 {r.id}（{r.to}、期限 {_md(r.decide_by)}）"))
         items.sort(key=lambda x: (x[0], x[1]))
         lines = [f"## {ws.isoformat()} の週（{_md(ws)}〜{_md(we)}）"]
         lines += [f"- {text}" for _, _, text in items] or ["- 予定なし"]
@@ -128,9 +120,9 @@ def _width(s: str) -> int:
     return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in s)
 
 
-def _day_entries(yd: YearData, ghq: Path, reqs: list[Request], first: date,
+def _day_entries(yd: YearData, ghq: Path, first: date,
                  last: date) -> dict[date, list[tuple[int, str, str]]]:
-    """日ごとの (並び順, 名前, 中身)。並び順は 授業 0、準備 1、予定 2、繁忙期 3、依頼 4。"""
+    """日ごとの (並び順, 名前, 中身)。並び順は 授業 0、準備 1、予定 2、繁忙期 3。"""
     days: dict[date, list[tuple[int, str, str]]] = {}
 
     def add(d: date, order: int, name: str, detail: str) -> None:
@@ -165,19 +157,15 @@ def _day_entries(yd: YearData, ghq: Path, reqs: list[Request], first: date,
             while d <= prep[1]:
                 add(d, 3, "busy", f"before {e.title} ({_md(e.date)})")
                 d += timedelta(days=1)
-    names = {c.id: c.name for c in yd.courses}
-    for r in reqs:
-        if r.status == "open":
-            add(r.decide_by, 4, names.get(r.to, r.to), f"request {r.id} due")
     for entries in days.values():
         entries.sort(key=lambda x: x[0])
     return days
 
 
-def day_table(yd: YearData, ghq: Path, reqs: list[Request], start: date, days: int) -> str:
+def day_table(yd: YearData, ghq: Path, start: date, days: int) -> str:
     """start から days 日分を、何も無い日も含めて 1 日 1 行以上の表にする。"""
     last = start + timedelta(days=days - 1)
-    entries = _day_entries(yd, ghq, reqs, start, last)
+    entries = _day_entries(yd, ghq, start, last)
     w = max((_width(name) for es in entries.values() for _, name, _ in es), default=0)
     lines = []
     d = start
@@ -195,7 +183,7 @@ def day_table(yd: YearData, ghq: Path, reqs: list[Request], start: date, days: i
 
 def main(argv: list[str] | None = None) -> int:
     setup_console()
-    ap = argparse.ArgumentParser(prog="week", description="週ごとの一覧")
+    ap = argparse.ArgumentParser(prog="aidec week", description="週ごとの一覧")
     ap.add_argument("year", type=int)
     ap.add_argument("--from", dest="start", type=date.fromisoformat, default=date.today(),
                     help="この日を含む週から（既定: 今日）")
@@ -207,11 +195,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         args.root = args.root or data_dir()
         yd = load_year(args.root / str(args.year))
-        reqs = load_requests(args.root / "requests")
         if args.table:
-            out = day_table(yd, gitops.ghq_root(), reqs, args.start, args.days)
+            out = day_table(yd, gitops.ghq_root(), args.start, args.days)
         else:
-            out = week_report(yd, gitops.ghq_root(), reqs, args.start, args.weeks)
+            out = week_report(yd, gitops.ghq_root(), args.start, args.weeks)
     except KNOWN_ERRORS as e:
         error(str(e))
         return 1

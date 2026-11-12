@@ -5,10 +5,7 @@ import pytest
 from conftest import write
 from aidec import check
 from aidec.data import load_year
-from aidec.requests import Request, write_request
 from aidec.schedule import build_part, write_part
-
-TODAY = date(2027, 9, 1)
 
 
 @pytest.fixture
@@ -28,9 +25,8 @@ def set_changes(ghq, name, changes_text):
     write(p, text[:text.index("\nchanges:") + 1] + changes_text)
 
 
-def run(root, ghq, today=TODAY):
-    """報告の無い変更（unreported）を除いて見る。changes を直に書くテスト用。"""
-    return [p for p in check.run_check(root, 2027, ghq, today) if p.kind != "unreported"]
+def run(root, ghq):
+    return check.run_check(root, 2027, ghq)
 
 
 def kinds(problems):
@@ -73,18 +69,6 @@ def test_makeup_day(setup, makeup, kind):
     assert got == ([kind] if kind else [])
 
 
-def test_overdue_request(setup):
-    root, ghq = setup
-    set_changes(ghq, "macro-mon", "changes:\n  - {n: 4, mode: zoom}\n  - {n: 7, note: x}\n")
-    set_changes(ghq, "seminar-wed", "changes:\n  - {n: 4, note: x}\n")
-    for rid, status in (("2027-08-20-macro-mon", "open"), ("2027-08-21-macro-mon", "reported")):
-        write_request(root / "requests", Request(rid, "macro-mon", date(2027, 8, 20), date(2027, 8, 31),
-                                                 status, [date(2027, 10, 18)], "x\n"))
-    (p,) = run(root, ghq)
-    assert (p.kind, p.course) == ("overdue", "macro-mon")
-    assert "2027-08-20-macro-mon" in p.message
-
-
 def test_not_issued_and_stale_and_bad(setup, year_dir):
     root, ghq = setup
     (ghq / "github.com" / "example" / "seminar-wed" / "2027" / "schedule.yaml").unlink()
@@ -101,13 +85,12 @@ def test_not_issued_and_stale_and_bad(setup, year_dir):
 
 def test_main_exit_codes(setup, capsys):
     root, ghq = setup
-    assert check.main(["2027", "--root", str(root), "--today", "2027-09-01"]) == 1
+    assert check.main(["2027", "--root", str(root)]) == 1
     out = capsys.readouterr().out
     assert "macro-mon" in out and "10/18" in out
     set_changes(ghq, "macro-mon", "changes:\n  - {n: 4, mode: zoom}\n  - {n: 7, note: x}\n")
     set_changes(ghq, "seminar-wed", "changes:\n  - {n: 4, note: x}\n")
-    _review_all(root, ghq)
-    assert check.main(["2027", "--root", str(root), "--today", "2027-09-01"]) == 0
+    assert check.main(["2027", "--root", str(root)]) == 0
     assert "ぶつかりは無い" in capsys.readouterr().out
 
 
@@ -133,8 +116,7 @@ def test_research_day_is_a_soft_notice(setup, year_dir, capsys):
     set_changes(ghq, "seminar-wed", "changes:\n  - {n: 4, note: x}\n")
     got = run(root, ghq)
     assert sorted((p.kind, p.soft) for p in got) == [("research_day", True), ("research_day", True)]
-    _review_all(root, ghq)
-    assert check.main(["2027", "--root", str(root), "--today", "2027-09-01"]) == 0
+    assert check.main(["2027", "--root", str(root)]) == 0
     assert "（注意）" in capsys.readouterr().out
 
 
@@ -161,41 +143,3 @@ def test_impossible_makeup_date_is_bad_schedule_and_others_continue(setup):
     assert ("macro-mon", "bad_schedule", None) in got
     assert ("seminar-wed", "undecided", date(2027, 10, 20)) in got
 
-
-def _decide_all(ghq, extra=""):
-    set_changes(ghq, "macro-mon", "changes:\n  - {n: 4, mode: zoom}\n  - {n: 7, note: x}\n" + extra)
-    set_changes(ghq, "seminar-wed", "changes:\n  - {n: 4, note: x}\n")
-
-
-def _review_all(root, ghq):
-    from aidec.schedule import load_schedule, write_reviewed
-    for name in ("macro-mon", "seminar-wed"):
-        _, changes = load_schedule(ghq / "github.com" / "example" / name / "2027" / "schedule.yaml")
-        write_reviewed(root / "2027" / "reviewed" / f"{name}.yaml", name, changes, "abc1234", TODAY)
-
-
-def test_changes_without_report_are_unreported(setup):
-    root, ghq = setup
-    _decide_all(ghq)
-    got = kinds(check.run_check(root, 2027, ghq, TODAY))
-    assert got == [("macro-mon", "unreported", None), ("seminar-wed", "unreported", None)]   # 控えが無ければ [] と比べる
-
-
-def test_reviewed_changes_are_quiet(setup):
-    root, ghq = setup
-    _decide_all(ghq)
-    _review_all(root, ghq)
-    assert check.run_check(root, 2027, ghq, TODAY) == []
-    # コメントと並びだけを変えても同じ
-    set_changes(ghq, "macro-mon", "changes:\n  - {n: 7, note: x}   # 全学休講\n  - {mode: zoom, n: 4}\n")
-    assert check.run_check(root, 2027, ghq, TODAY) == []
-
-
-def test_new_change_after_review(setup, capsys):
-    root, ghq = setup
-    _decide_all(ghq)
-    _review_all(root, ghq)
-    _decide_all(ghq, "  - {n: 10, mode: zoom}\n")
-    (p,) = check.run_check(root, 2027, ghq, TODAY)
-    assert (p.course, p.kind, p.soft) == ("macro-mon", "unreported", False)
-    assert "第 10 回" in p.message

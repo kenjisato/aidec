@@ -63,7 +63,7 @@ def push(repo: Path) -> None:
 
 
 def ghq_root() -> Path:
-    env = os.environ.get("WORKDESK_GHQ_ROOT")
+    env = os.environ.get("AIDEC_GHQ_ROOT")
     if env:
         return Path(env)
     p = subprocess.run(["ghq", "root"], capture_output=True, text=True, encoding="utf-8")

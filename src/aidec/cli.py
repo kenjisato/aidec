@@ -10,11 +10,9 @@ from classdays.plan import PlanError
 from .config import ConfigError
 from .data import DataError
 from .gitops import GitError
-from .reports import ReportError
-from .requests import RequestError
 from .schedule import ScheduleError
 
-KNOWN_ERRORS = (CalendarError, PlanError, ConfigError, DataError, GitError, ReportError, RequestError, ScheduleError)
+KNOWN_ERRORS = (CalendarError, PlanError, ConfigError, DataError, GitError, ScheduleError)
 
 
 def setup_console() -> None:

@@ -2,56 +2,33 @@
 from __future__ import annotations
 
 import argparse
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 from . import gitops
 from .cli import KNOWN_ERRORS, error, setup_console
 from .config import data_dir
 from .data import Course, YearData, load_year
-from .requests import Request, next_request_id, write_request
-from .schedule import PlanEntry, WorkdeskPart, build_part, read_part, write_issued_copy, write_part
+from .schedule import WorkdeskPart, build_part, read_part, write_issued_copy, write_part
 
 
 class IssueError(RuntimeError):
     pass
 
 
-def new_facts(prev: WorkdeskPart | None, cur: WorkdeskPart, today: date) -> list[tuple[PlanEntry, list[str]]]:
-    """前に配った版に無かった事実を、今日以降の回について集める。"""
-    old = {e.n: set(e.facts) for e in prev.plan} if prev else {}
-    out = []
-    for e in cur.plan:
-        added = [f for f in e.facts if f not in old.get(e.n, set())]
-        if e.date >= today and added:
-            out.append((e, added))
-    return out
-
-
 def _md(d: date) -> str:
     return f"{d.month}/{d.day}"
 
 
-def _request_body(fresh: list[tuple[PlanEntry, list[str]]]) -> str:
-    lines = [f"- {_md(e.date)}（第 {e.n} 回）: {'、'.join(added)}" for e, added in fresh]
-    return ("次の回に事実が加わった。対応を決めて schedule.yaml の changes に書き、報告してほしい。\n\n"
-            + "\n".join(lines) + "\n")
-
-
-def _issue_course(yd: YearData, course: Course, root: Path, ghq: Path, today: date,
-                  decide_days: int, dry_run: bool) -> None:
+def _issue_course(yd: YearData, course: Course, root: Path, ghq: Path, today: date, dry_run: bool) -> None:
     cal = yd.calendar_for(course)
     part = build_part(course, cal, yd.events, f"{today.isoformat()} (workdesk {gitops.head_sha(root)})")
     issued_path = yd.dir / "issued" / f"{course.id}.yaml"
-    prev = read_part(issued_path) if issued_path.exists() else None
-    fresh = new_facts(prev, part, today)
 
     if dry_run:
         print(f"== {course.id}（{course.term} {course.slot.weekday}-{course.slot.period}、{len(part.plan)} 回）")
         for e in part.plan:
             print(f"  第 {e.n} 回 {_md(e.date)}" + (f"  {'、'.join(e.facts)}" if e.facts else ""))
-        for e, added in fresh:
-            print(f"  依頼にする: 第 {e.n} 回 {_md(e.date)} {'、'.join(added)}")
         return
 
     if course.repo is None:
@@ -87,18 +64,6 @@ def _issue_course(yd: YearData, course: Course, root: Path, ghq: Path, today: da
 
     write_issued_copy(issued_path, part)
     paths = [issued_path.relative_to(root).as_posix()]
-    if fresh:
-        req = Request(
-            id=next_request_id(root / "requests", today, course.id),
-            to=course.id,
-            issued=today,
-            decide_by=max(today, min(e.date for e, _ in fresh) - timedelta(days=decide_days)),
-            status="open",
-            dates=[e.date for e, _ in fresh],
-            body=_request_body(fresh),
-        )
-        paths.append(write_request(root / "requests", req).relative_to(root).as_posix())
-        print(f"{course.id}: 依頼 {req.id} を出した（期限 {req.decide_by.isoformat()}）")
     gitops.commit_paths(root, paths, f"issue: {course.id} に {rel} を配る")
     if gitops.has_upstream(root) and gitops.is_ahead(root):
         gitops.push(root)
@@ -106,18 +71,17 @@ def _issue_course(yd: YearData, course: Course, root: Path, ghq: Path, today: da
 
 def main(argv: list[str] | None = None) -> int:
     setup_console()
-    ap = argparse.ArgumentParser(prog="issue", description="授業レポに schedule.yaml を配る")
+    ap = argparse.ArgumentParser(prog="aidec issue", description="授業レポに schedule.yaml を配る")
     ap.add_argument("year", type=int)
     ap.add_argument("--course", action="append", help="配る授業の id。何度でも書ける。省くと全部")
     ap.add_argument("--today", type=date.fromisoformat, default=date.today())
-    ap.add_argument("--decide-days", type=int, default=7, help="依頼の期限を授業日の何日前にするか")
     ap.add_argument("--dry-run", action="store_true", help="何も書かず、作るものを表示する")
     ap.add_argument("--root", type=Path, default=None, help=argparse.SUPPRESS)
     args = ap.parse_args(argv)
 
     try:
         args.root = args.root or data_dir()
-        # もう一方の機械で出した控えと依頼を先に取り込む。dry-run では手元を変えない
+        # もう一方の機械で出した控えを先に取り込む。dry-run では手元を変えない
         if not args.dry_run and gitops.has_upstream(args.root):
             gitops.pull_ff_only(args.root)
         yd = load_year(args.root / str(args.year))
@@ -135,7 +99,7 @@ def main(argv: list[str] | None = None) -> int:
     failed = False
     for course in courses:
         try:
-            _issue_course(yd, course, args.root, ghq, args.today, args.decide_days, args.dry_run)
+            _issue_course(yd, course, args.root, ghq, args.today, args.dry_run)
         except (IssueError, *KNOWN_ERRORS) as e:
             error(f"{course.id}: {e}")
             failed = True

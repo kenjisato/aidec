@@ -173,16 +173,3 @@ def test_bad_changes(tmp_path, mon_part, changes_text, message):
     with pytest.raises(ScheduleError, match=message):
         part, changes = load_schedule(p)
         effective_sessions(part.plan, changes)
-
-
-def test_reviewed_copy_round_trip(tmp_path):
-    from aidec.schedule import read_reviewed, write_reviewed
-    p = tmp_path / "reviewed" / "macro-mon.yaml"
-    assert read_reviewed(p) is None
-    changes = [Change(4, "zoom", reason="出張"), Change(7, cancel=True, makeup=date(2027, 11, 20)),
-               Change(15, "ondemand", prep_from=date(2027, 12, 21), release=date(2028, 1, 5))]
-    write_reviewed(p, "macro-mon", changes, "abc1234", date(2027, 10, 6))
-    text = p.read_text(encoding="utf-8")
-    assert "course: macro-mon\nreviewed: 2027-10-06\ncourse_commit: abc1234\n" in text
-    assert "  - {n: 4, mode: zoom, reason: 出張}\n" in text
-    assert read_reviewed(p) == changes
