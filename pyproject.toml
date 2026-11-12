@@ -20,5 +20,8 @@ build-backend = "uv_build"
 package = true
 
 [tool.pytest.ini_options]
-pythonpath = ["src", "tests"]
+pythonpath = ["tests"]
 testpaths = ["tests"]
+
+[tool.uv.build-backend]
+module-name = ["aidec", "classdays"]
