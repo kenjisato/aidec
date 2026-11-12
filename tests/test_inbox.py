@@ -30,3 +30,8 @@ def test_broken_file_is_named_and_others_load(tmp_path):
     write(tmp_path / "inbox" / "broken.md", "no front matter\n")
     got, bad = inbox.load(tmp_path)
     assert [i.ref for i in got] == ["20271105-macro-mon-a1b2c3"] and bad == ["broken.md"]
+
+
+def test_crlf_in_text_is_normalised(tmp_path):
+    p = inbox.write(tmp_path, _item(text="a\r\nb\rc"))
+    assert b"\r" not in p.read_bytes()

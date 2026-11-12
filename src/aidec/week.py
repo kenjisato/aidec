@@ -189,7 +189,7 @@ def inbox_section(root: Path) -> str:
     lines = ["", "## 上がってきた相談"]
     for it in items:
         where = it.course + (f" 第 {it.session} 回" if it.session is not None else "")
-        lines.append(f"- {it.ref} {where}{'（返事不要）' if it.no_reply else ''}: {it.text.splitlines()[0]}")
+        lines.append(f"- {it.ref} {where}{'（返事不要）' if it.no_reply else ''}: {(it.text.splitlines() or [""])[0]}")
     lines += [f"- 読めない: {name}" for name in bad]
     return "\n".join(lines) + "\n"
 
@@ -216,6 +216,5 @@ def main(argv: list[str] | None = None) -> int:
         error(str(e))
         return 1
     print(out, end="")
-    if not args.table:
-        print(inbox_section(args.root), end="")
+    print(inbox_section(args.root), end="")
     return 0

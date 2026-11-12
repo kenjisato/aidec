@@ -18,34 +18,36 @@ from .config import ConfigError, data_dir
 PROTOCOL = 1
 _DECLINED = {"protocol": PROTOCOL, "status": "declined"}
 _MAX_HITS = 10
+_ID = re.compile(r"[A-Za-z0-9_-]+")
 
 
-def _sessions_dir(year_dir: Path) -> tuple[Path, str]:
-    """(年度の下の回のディレクトリの親, 回の名前の書式)。team.yaml の sessions.dir があればそれに従う。"""
-    pattern = "{nn}"
+def _team(year_dir: Path) -> dict:
     team = year_dir / "team.yaml"
     if team.is_file():
         try:
-            doc = yamlio.load(team) or {}
-            pattern = str((doc.get("sessions") or {}).get("dir") or pattern)
-        except (yamlio.YamlError, AttributeError):
+            doc = yamlio.load(team)
+            return doc if isinstance(doc, dict) else {}
+        except yamlio.YamlError:
             pass
-    return year_dir, pattern
+    return {}
 
 
-def _course_map(year_dir: Path) -> Path:
-    name = "course-map.md"
-    team = year_dir / "team.yaml"
-    if team.is_file():
-        try:
-            name = str((yamlio.load(team) or {}).get("map") or name)
-        except (yamlio.YamlError, AttributeError):
-            pass
-    return year_dir / name
+def _layout(year_dir: Path) -> tuple[str, Path]:
+    """(回のディレクトリの書式, course-map のパス)。team.yaml があればそれに従う。"""
+    team = _team(year_dir)
+    sessions = team.get("sessions")
+    pattern = str(sessions.get("dir") or "{nn}") if isinstance(sessions, dict) else "{nn}"
+    return pattern, year_dir / str(team.get("map") or "course-map.md")
+
+
+_RUNS = re.compile(r"[\u4e00-\u9fff々]+|[\u30a0-\u30ffー]+|[A-Za-z0-9]+")
 
 
 def _words(text: str) -> list[str]:
-    return [w for w in re.split(r"[\s\W_]+", text) if len(w) >= 2]
+    """空白で区切った語と、漢字・カタカナ・英数字の連なり（ひらがなと句読点は区切り）。2 文字以上。"""
+    found = [w for w in re.split(r"[\s\W_]+", text) if len(w) >= 2]
+    found += [w for w in _RUNS.findall(text) if len(w) >= 2]
+    return list(dict.fromkeys(found))
 
 
 def _course_repos(data: Path):
@@ -76,15 +78,17 @@ def _ask(text: str, data: Path) -> str:
     hits: list[str] = []
     maps: list[str] = []
     for cid, name, ydir in _course_repos(data):
-        _, pattern = _sessions_dir(ydir)
-        cmap = _course_map(ydir)
+        pattern, cmap = _layout(ydir)
         if cmap.is_file():
             maps.append(f"{name}: {cmap}")
             for line in cmap.read_text(encoding="utf-8", errors="replace").splitlines():
                 if any(w in line for w in words):
                     hits.append(f"{name} | {line.strip()} | {cmap}")
         for n in range(100):
-            sfile = ydir / pattern.format(nn=f"{n:02d}", n=n) / "session.yaml"
+            try:
+                sfile = ydir / pattern.format(nn=f"{n:02d}", n=n) / "session.yaml"
+            except (KeyError, IndexError, ValueError):
+                break
             if not sfile.is_file():
                 continue
             try:
@@ -130,6 +134,10 @@ def _raise(req: dict, data: Path, now: datetime) -> dict:
     try:
         gitops.commit_paths(data, [f"inbox/{item.ref}.md"], f"inbox: {item.ref}")
     except gitops.GitError:
+        try:
+            gitops.git(data, "reset", "-q", "--", f"inbox/{item.ref}.md")
+        except gitops.GitError:
+            pass
         path.unlink(missing_ok=True)
         raise
     _detached_push(data)
@@ -141,6 +149,10 @@ def handle(request: dict, data_dir: Path, now: datetime) -> dict:
         return dict(_DECLINED)
     verb, course, text = request.get("verb"), request.get("course"), request.get("text")
     if verb not in ("raise", "ask") or not all(isinstance(v, str) and v for v in (course, text)):
+        return dict(_DECLINED)
+    cls = request.get("class")
+    if not text.strip() or not _ID.fullmatch(course) or (cls is not None and not (
+            isinstance(cls, str) and _ID.fullmatch(cls))):
         return dict(_DECLINED)
     if verb == "raise":
         return _raise(request, data_dir, now)

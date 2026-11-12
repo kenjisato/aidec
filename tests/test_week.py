@@ -158,3 +158,17 @@ def test_week_lists_raised_matters(tmp_path):
                                      datetime(2027, 11, 5, tzinfo=timezone.utc), False, "補講日がほしい\n詳細"))
     assert inbox_section(tmp_path).splitlines() == [
         "", "## 上がってきた相談", "- 20271105-macro-mon-a1b2c3 macro-mon 第 5 回: 補講日がほしい"]
+
+
+def test_inbox_section_survives_empty_body_and_shows_in_table(tmp_path, capsys, monkeypatch):
+    from datetime import datetime, timezone
+    from aidec import inbox
+    from aidec.week import inbox_section, main
+    inbox.write(tmp_path, inbox.Item("20271105-macro-mon-a1b2c3", "raise", "macro-mon", None, None,
+                                     datetime(2027, 11, 5, tzinfo=timezone.utc), True, ""))
+    assert "macro-mon（返事不要）" in inbox_section(tmp_path)
+    write(tmp_path / "2027" / "calendar-univa.yaml", "university: univa\nyear: 2027\nsource: x\nterms: {fall: {start: 2027-09-27, end: 2028-01-25}}\n")
+    write(tmp_path / "2027" / "courses.yaml", "[]\n")
+    monkeypatch.setenv("AIDEC_GHQ_ROOT", str(tmp_path))
+    assert main(["2027", "--table", "--from", "2027-10-18", "--days", "1", "--root", str(tmp_path)]) == 0
+    assert "## 上がってきた相談" in capsys.readouterr().out

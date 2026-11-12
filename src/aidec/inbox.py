@@ -40,7 +40,7 @@ def write(data_dir: Path, item: Item) -> Path:
     path = data_dir / "inbox" / f"{item.ref}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="\n") as f:
-        f.write(f"---\n{buf.getvalue()}---\n{item.text.rstrip()}\n")
+        f.write(f"---\n{buf.getvalue()}---\n{item.text.replace(chr(13) + chr(10), chr(10)).replace(chr(13), chr(10)).rstrip()}\n")
     return path
 
 

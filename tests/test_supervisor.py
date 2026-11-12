@@ -17,6 +17,7 @@ def desk(tmp_path, git_env, year_dir, ghq, monkeypatch):
     root = make_repo(year_dir.parent, tmp_path / "remotes" / "desk.git")
     cfg = write(tmp_path / "config.yaml", f"data_dir: {root}\n")
     monkeypatch.setenv("AIDEC_CONFIG", str(cfg))
+    monkeypatch.setattr(supervisor, "_detached_push", lambda repo: None)
     mon = ghq / "github.com" / "example" / "macro-mon" / "2027"
     write(mon / "05" / "session.yaml", "session:\n  title: 財政政策と乗数効果\n")
     write(mon / "course-map.md", "- 第 5 回 財政政策\n")
@@ -54,7 +55,8 @@ def test_ask_without_hit_lists_course_maps(desk, ghq):
 
 
 @pytest.mark.parametrize("bad", [
-    {"protocol": 2}, {"verb": "x"}, {"text": ""}, {"course": None}])
+    {"protocol": 2}, {"verb": "x"}, {"text": ""}, {"text": " \n"}, {"course": None},
+    {"course": "../x"}, {"course": "a b"}, {"class": "../A"}])
 def test_bad_requests_are_declined(desk, bad):
     assert supervisor.handle(req(**bad), desk, NOW) == {"protocol": 1, "status": "declined"}
 
@@ -81,3 +83,33 @@ def test_main_returns_quickly_even_if_remote_is_unreachable(desk):
     p = _run(json.dumps(req()), {}, 30)
     assert p.returncode == 0 and json.loads(p.stdout)["status"] == "accepted"
     assert time.monotonic() - t < 5
+
+
+def test_ask_with_a_japanese_sentence(desk):
+    res = supervisor.handle(req(verb="ask", text="乗数効果を扱った回は？"), desk, NOW)
+    assert "財政政策と乗数効果" in res["answer"]
+
+
+def test_ask_skips_unknown_placeholder_in_team_yaml(desk, ghq):
+    write(ghq / "github.com/example/macro-mon/2027/team.yaml", "sessions: {dir: '{zz}'}\n")
+    res = supervisor.handle(req(verb="ask", text="乗数効果"), desk, NOW)
+    assert res["status"] == "answered"
+
+
+def test_failed_commit_leaves_nothing_behind(desk):
+    hook = desk / ".git" / "hooks" / "pre-commit"
+    hook.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    hook.chmod(0o755)
+    with pytest.raises(Exception):
+        supervisor.handle(req(), desk, NOW)
+    assert not list((desk / "inbox").glob("*.md"))
+    assert run_git(desk, "status", "--porcelain") == ""
+
+
+def test_main_failed_commit_exits_1(desk, capsys, monkeypatch):
+    hook = desk / ".git" / "hooks" / "pre-commit"
+    hook.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    hook.chmod(0o755)
+    monkeypatch.setattr("sys.stdin", __import__("io").StringIO(json.dumps(req())))
+    assert supervisor.main([]) == 1
+    assert capsys.readouterr().out == ""
