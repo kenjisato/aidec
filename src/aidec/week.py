@@ -189,7 +189,9 @@ def inbox_section(root: Path) -> str:
     lines = ["", "## 上がってきた相談"]
     for it in items:
         where = it.course + (f" 第 {it.session} 回" if it.session is not None else "")
-        lines.append(f"- {it.ref} {where}{'（返事不要）' if it.no_reply else ''}: {(it.text.splitlines() or [""])[0]}")
+        first = (it.text.splitlines() or [""])[0]
+        quiet = "（返事不要）" if it.no_reply else ""
+        lines.append(f"- {it.ref} {where}{quiet}: {first}")
     lines += [f"- 読めない: {name}" for name in bad]
     return "\n".join(lines) + "\n"
 

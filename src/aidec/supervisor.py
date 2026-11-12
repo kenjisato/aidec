@@ -87,7 +87,7 @@ def _ask(text: str, data: Path) -> str:
         for n in range(100):
             try:
                 sfile = ydir / pattern.format(nn=f"{n:02d}", n=n) / "session.yaml"
-            except (KeyError, IndexError, ValueError):
+            except (KeyError, IndexError, ValueError, AttributeError):
                 break
             if not sfile.is_file():
                 continue
