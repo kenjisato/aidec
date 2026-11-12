@@ -28,7 +28,7 @@ def error(message: str) -> None:
 
 # サブコマンド名 -> main(argv) を持つモジュール。循環 import を避けるため、呼ぶときに読む。
 COMMANDS = {"issue": "aidec.issue", "week": "aidec.week", "check": "aidec.check",
-            "supervise": "aidec.supervisor"}
+            "supervise": "aidec.supervisor", "brief": "aidec.brief"}
 
 
 def main(argv: list[str] | None = None) -> int:

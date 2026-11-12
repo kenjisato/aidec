@@ -13,31 +13,13 @@ from datetime import datetime
 from pathlib import Path
 
 from . import gitops, inbox, yamlio
+from .courserepo import layout as _layout
 from .config import ConfigError, data_dir
 
 PROTOCOL = 1
 _DECLINED = {"protocol": PROTOCOL, "status": "declined"}
 _MAX_HITS = 10
 _ID = re.compile(r"[A-Za-z0-9_-]+")
-
-
-def _team(year_dir: Path) -> dict:
-    team = year_dir / "team.yaml"
-    if team.is_file():
-        try:
-            doc = yamlio.load(team)
-            return doc if isinstance(doc, dict) else {}
-        except yamlio.YamlError:
-            pass
-    return {}
-
-
-def _layout(year_dir: Path) -> tuple[str, Path]:
-    """(回のディレクトリの書式, course-map のパス)。team.yaml があればそれに従う。"""
-    team = _team(year_dir)
-    sessions = team.get("sessions")
-    pattern = str(sessions.get("dir") or "{nn}") if isinstance(sessions, dict) else "{nn}"
-    return pattern, year_dir / str(team.get("map") or "course-map.md")
 
 
 _RUNS = re.compile(r"[\u4e00-\u9fff々]+|[\u30a0-\u30ffー]+|[A-Za-z0-9]+")
