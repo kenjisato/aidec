@@ -1,0 +1,24 @@
+[project]
+name = "aidec"
+version = "0"
+description = "個人の秘書道具: 予定の一覧、朝の知らせ、授業レポの上位コマンド"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["ruamel.yaml>=0.18"]
+
+[project.scripts]
+aidec = "aidec.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["uv_build>=0.8,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv]
+package = true
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "tests"]
+testpaths = ["tests"]
