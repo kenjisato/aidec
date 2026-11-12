@@ -8,7 +8,7 @@ from pathlib import Path
 
 from classdays.calendar import WEEKDAYS
 
-from . import gitops
+from . import gitops, inbox
 from .cli import KNOWN_ERRORS, error, setup_console
 from .config import data_dir
 from .data import Course, YearData, load_year
@@ -181,6 +181,19 @@ def day_table(yd: YearData, ghq: Path, start: date, days: int) -> str:
     return "\n".join(lines) + "\n"
 
 
+def inbox_section(root: Path) -> str:
+    """授業から上がってきた相談（inbox/）。無ければ空。"""
+    items, bad = inbox.load(root)
+    if not items and not bad:
+        return ""
+    lines = ["", "## 上がってきた相談"]
+    for it in items:
+        where = it.course + (f" 第 {it.session} 回" if it.session is not None else "")
+        lines.append(f"- {it.ref} {where}{'（返事不要）' if it.no_reply else ''}: {it.text.splitlines()[0]}")
+    lines += [f"- 読めない: {name}" for name in bad]
+    return "\n".join(lines) + "\n"
+
+
 def main(argv: list[str] | None = None) -> int:
     setup_console()
     ap = argparse.ArgumentParser(prog="aidec week", description="週ごとの一覧")
@@ -203,4 +216,6 @@ def main(argv: list[str] | None = None) -> int:
         error(str(e))
         return 1
     print(out, end="")
+    if not args.table:
+        print(inbox_section(args.root), end="")
     return 0

@@ -147,3 +147,14 @@ def test_table_from_the_command_line(year_dir, ghq, capsys):
     from aidec.week import main
     assert main(["2027", "--root", str(year_dir.parent), "--table", "--from", "2027-10-16", "--days", "2"]) == 0
     assert capsys.readouterr().out.splitlines() == ["10-16 Sat |", "10-17 Sun |"]
+
+
+def test_week_lists_raised_matters(tmp_path):
+    from datetime import datetime, timezone
+    from aidec import inbox
+    from aidec.week import inbox_section
+    assert inbox_section(tmp_path) == ""
+    inbox.write(tmp_path, inbox.Item("20271105-macro-mon-a1b2c3", "raise", "macro-mon", None, 5,
+                                     datetime(2027, 11, 5, tzinfo=timezone.utc), False, "補講日がほしい\n詳細"))
+    assert inbox_section(tmp_path).splitlines() == [
+        "", "## 上がってきた相談", "- 20271105-macro-mon-a1b2c3 macro-mon 第 5 回: 補講日がほしい"]
