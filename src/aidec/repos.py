@@ -22,22 +22,30 @@ def _md(d: date) -> str:
     return f"{d.month}/{d.day}"
 
 
-def _line(p: dict, iss: dict, today: date, last_d: date | None, stalled: bool) -> str:
+def _line(p: dict, iss: dict, today: date, last_d: date | None, stalled: bool) -> tuple[str, str, str]:
+    """(名前, 開いている数, 残り)。幅は並べるときにそろえる。"""
     name = str(p.get("slug", "?")).rsplit("/", 1)[-1]
-    text = f"{name} 開 {iss.get('open', 0)}"
+    text = ""
     if iss.get("oldest_open_at"):
-        text += f" 最古 {_md(_dt(iss['oldest_open_at']).date())}"
+        text += f"  Oldest {_dt(iss['oldest_open_at']).date().isoformat()}"
+    if stalled and last_d is not None:
+        text += f"  Latest {last_d.isoformat()}"
     for pl in iss.get("plans") or []:
         done, total = pl.get("done"), pl.get("total")
-        prog = f"{done}/{total}" if done is not None and total is not None else "計画なし"
-        text += f" #{pl.get('issue')} {prog}"
-    if stalled and last_d is not None:
-        text += f" 最終 {last_d.year}/{_md(last_d)}"
+        prog = f"{done}/{total}" if done is not None and total is not None else "no plan"
+        text += f"  #{pl.get('issue')} {prog}"
     if iss.get("fetched_at"):
         fetched = _dt(iss["fetched_at"]).date()
         if fetched < today:
-            text += f"（{_md(fetched)} 時点）"
-    return f"- {text}"
+            text += f"  (as of {fetched.isoformat()})"
+    return name, str(iss.get("open", 0)), text
+
+
+def _aligned(rows: list[tuple[str, tuple[str, str, str]]]) -> list[str]:
+    rows = sorted(rows, key=lambda r: r[0], reverse=True)
+    w = max((len(n) for _, (n, _, _) in rows), default=0)
+    k = max((len(o) for _, (_, o, _) in rows), default=0)
+    return [f"- {n.ljust(w)}  Open {o.rjust(k)}{t}".rstrip() for _, (n, o, t) in rows]
 
 
 def format_repos(doc: dict, today: date) -> tuple[list[str], list[str]]:
@@ -57,8 +65,7 @@ def format_repos(doc: dict, today: date) -> tuple[list[str], list[str]]:
             active.append((last, _line(p, iss, today, last_d, False)))
         elif iss.get("open"):
             stalled.append((last or "", _line(p, iss, today, last_d, True)))
-    return ([t for _, t in sorted(active, reverse=True)],
-            [t for _, t in sorted(stalled, reverse=True)])
+    return _aligned(active), _aligned(stalled)
 
 
 def repos_section(today: date, fetch: bool = True) -> tuple[list[str], list[str]] | None:
@@ -71,9 +78,9 @@ def repos_section(today: date, fetch: bool = True) -> tuple[list[str], list[str]
             r = subprocess.run([SR, "issues", "fetch"], capture_output=True, text=True,
                                encoding="utf-8", errors="replace", timeout=FETCH_TIMEOUT)
             if r.returncode != 0:
-                notes.append("- 取得失敗あり（前回の値）")
+                notes.append("- fetch failed for some (previous values)")
         except (OSError, subprocess.TimeoutExpired):
-            notes.append("- 取得失敗（前回の値）")
+            notes.append("- fetch failed (previous values)")
     try:
         r = subprocess.run([SR, "list", "--format", "json"], capture_output=True, text=True,
                            encoding="utf-8", errors="replace", timeout=30)
@@ -81,6 +88,6 @@ def repos_section(today: date, fetch: bool = True) -> tuple[list[str], list[str]
     except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
         doc = None
     if not isinstance(doc, dict):
-        return ["- sr list 失敗"], []
+        return ["- sr list failed"], []
     active, stalled = format_repos(doc, today)
     return active + notes, stalled

@@ -117,9 +117,9 @@ def brief_report(yd: YearData, ghq: Path, root: Path, day: date, fetch: bool = T
     repo_lines = repos.repos_section(day, fetch)
     if repo_lines is not None:
         active, stalled = repo_lines
-        blocks.append(block("レポ", active))
+        blocks.append(block("Repos", active))
         if stalled:
-            blocks.append(block("止まっているレポ", stalled))
+            blocks.append(block("Stalled", stalled))
     return "\n\n".join(blocks) + f"\n\n{FOOTER}\n"
 
 
