@@ -1,11 +1,11 @@
-"""朝（または前日の夜）の知らせ。その日の授業、近い締め切りと出張、相談、準備の候補を平文で出す。"""
+"""朝（または前日の夜）の知らせ。その日の授業、近い締め切りと出張、相談、準備の候補、レポの様子を平文で出す。"""
 from __future__ import annotations
 
 import argparse
 from datetime import date, timedelta
 from pathlib import Path
 
-from . import courserepo, gitops, yamlio
+from . import courserepo, gitops, repos, yamlio
 from .cli import KNOWN_ERRORS, error, setup_console
 from .config import data_dir
 from .data import Course, YearData, load_year
@@ -102,7 +102,7 @@ def _prep_candidates(yd: YearData, ghq: Path, day: date) -> list[str]:
     return lines + [f"- {name} 第 {n} 回（{_md_wd(d)}）" for d, name, n in sorted(found)]
 
 
-def brief_report(yd: YearData, ghq: Path, root: Path, day: date) -> str:
+def brief_report(yd: YearData, ghq: Path, root: Path, day: date, fetch: bool = True) -> str:
     def block(head: str, lines: list[str]) -> str:
         return "\n".join([f"## {head}", *(lines or ["- なし"])])
 
@@ -114,6 +114,9 @@ def brief_report(yd: YearData, ghq: Path, root: Path, day: date) -> str:
     if inbox_text:
         blocks.append(inbox_text)
     blocks.append(block("準備の候補", _prep_candidates(yd, ghq, day)))
+    repo_lines = repos.repos_section(day, fetch)
+    if repo_lines is not None:
+        blocks.append(block("レポの様子（開いている Issue）", repo_lines))
     return "\n\n".join(blocks) + f"\n\n{FOOTER}\n"
 
 
@@ -123,13 +126,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("year", type=int)
     ap.add_argument("--date", type=date.fromisoformat, default=date.today(), help="今日（既定: 今日）")
     ap.add_argument("--evening", action="store_true", help="翌日の分を出す")
+    ap.add_argument("--no-fetch", action="store_true", help="Issue を取得し直さない（sr の前回の値で出す）")
     ap.add_argument("--root", type=Path, default=None, help=argparse.SUPPRESS)
     args = ap.parse_args(argv)
     try:
         root = args.root or data_dir()
         yd = load_year(root / str(args.year))
         day = args.date + timedelta(days=1) if args.evening else args.date
-        out = brief_report(yd, gitops.ghq_root(), root, day)
+        out = brief_report(yd, gitops.ghq_root(), root, day, not args.no_fetch)
     except KNOWN_ERRORS as e:
         error(str(e))
         return 1

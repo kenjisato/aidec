@@ -22,7 +22,7 @@ uv run aidec check 2027
 ```
 
 ```
-uv run aidec brief 2027            # 今日の授業・締め切り・相談・準備の候補（--evening で明日）
+uv run aidec brief 2027            # 今日の授業・締め切り・相談・準備の候補（--evening で明日）、レポの様子（sr があれば。--no-fetch で取得し直さない）
 uv run aidec supervise             # instructor-kit の上位コマンド（通常は直接呼ばない）
 ```
 

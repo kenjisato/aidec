@@ -109,3 +109,10 @@ def ghq(tmp_path, git_env, monkeypatch):
         make_repo(root / "github.com" / "example" / name, tmp_path / "remotes" / f"{name}.git")
     monkeypatch.setenv("AIDEC_GHQ_ROOT", str(root))
     return root
+
+
+@pytest.fixture(autouse=True)
+def no_real_sr(monkeypatch):
+    """テストが手元の sr（通信する）を呼ばないように。"""
+    from aidec import repos
+    monkeypatch.setattr(repos, "SR", "aidec-test-no-such-sr")
