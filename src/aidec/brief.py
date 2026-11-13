@@ -116,7 +116,10 @@ def brief_report(yd: YearData, ghq: Path, root: Path, day: date, fetch: bool = T
     blocks.append(block("準備の候補", _prep_candidates(yd, ghq, day)))
     repo_lines = repos.repos_section(day, fetch)
     if repo_lines is not None:
-        blocks.append(block("レポの様子（開いている Issue）", repo_lines))
+        active, stalled = repo_lines
+        blocks.append(block(f"動いているレポ（{repos.ACTIVE_DAYS} 日以内に触った。開いている Issue）", active))
+        if stalled:
+            blocks.append(block("止まっているレポ（Issue が開いたまま。閉じるか、やるか）", stalled))
     return "\n\n".join(blocks) + f"\n\n{FOOTER}\n"
 
 

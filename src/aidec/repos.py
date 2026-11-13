@@ -22,34 +22,46 @@ def _md(d: date) -> str:
     return f"{d.month}/{d.day}"
 
 
-def format_repos(doc: dict, today: date) -> list[str]:
-    """開いた Issue があるか、ACTIVE_DAYS 日以内に触ったプロジェクトを、最後に触った順に 1 行ずつ。"""
-    rows = []
+def _line(p: dict, iss: dict, today: date, last_d: date | None, stalled: bool) -> str:
+    name = str(p.get("slug", "?")).rsplit("/", 1)[-1]
+    text = f"{name} 開 {iss.get('open', 0)}"
+    if iss.get("oldest_open_at"):
+        text += f"（最古 {_md(_dt(iss['oldest_open_at']).date())}）"
+    for pl in iss.get("plans") or []:
+        done, total = pl.get("done"), pl.get("total")
+        prog = f"{done}/{total}" if done is not None and total is not None else "計画が見つからない"
+        text += f" #{pl.get('issue')} {prog}"
+    if stalled and last_d is not None:
+        text += f" 最後に触った {last_d.year}/{_md(last_d)}"
+    if iss.get("fetched_at"):
+        fetched = _dt(iss["fetched_at"]).date()
+        if fetched < today:
+            text += f"（{_md(fetched)} 時点）"
+    return f"- {text}"
+
+
+def format_repos(doc: dict, today: date) -> tuple[list[str], list[str]]:
+    """(動いている, 止まっている)。
+
+    動いている: ACTIVE_DAYS 日以内に触ったもの。止まっている: それより前で、開いた Issue があるもの。
+    どちらも最後に触った順。開いた Issue が無く止まっているものは出さない。
+    """
+    active, stalled = [], []
     for p in doc.get("projects") or []:
         iss = p.get("issues")
+        if not iss:
+            continue
         last = p.get("last_activity")
         last_d = _dt(last).date() if last else None
-        recent = last_d is not None and last_d >= today - timedelta(days=ACTIVE_DAYS)
-        if not iss or not (iss.get("open") or recent):
-            continue
-        name = str(p.get("slug", "?")).rsplit("/", 1)[-1]
-        text = f"{name} 開 {iss.get('open', 0)}"
-        if iss.get("oldest_open_at"):
-            text += f"（最古 {_md(_dt(iss['oldest_open_at']).date())}）"
-        for pl in iss.get("plans") or []:
-            done, total = pl.get("done"), pl.get("total")
-            prog = f"{done}/{total}" if done is not None and total is not None else "計画が見つからない"
-            text += f" #{pl.get('issue')} {prog}"
-        if iss.get("fetched_at"):
-            fetched = _dt(iss["fetched_at"]).date()
-            if fetched < today:
-                text += f"（{_md(fetched)} 時点）"
-        rows.append((last or "", text))
-    rows.sort(key=lambda r: r[0], reverse=True)
-    return [f"- {t}" for _, t in rows]
+        if last_d is not None and last_d >= today - timedelta(days=ACTIVE_DAYS):
+            active.append((last, _line(p, iss, today, last_d, False)))
+        elif iss.get("open"):
+            stalled.append((last or "", _line(p, iss, today, last_d, True)))
+    return ([t for _, t in sorted(active, reverse=True)],
+            [t for _, t in sorted(stalled, reverse=True)])
 
 
-def repos_section(today: date, fetch: bool = True) -> list[str] | None:
+def repos_section(today: date, fetch: bool = True) -> tuple[list[str], list[str]] | None:
     """sr が無ければ None（欄を出さない）。取得の失敗は前回の値のまま出す。"""
     if shutil.which(SR) is None:
         return None
@@ -69,5 +81,6 @@ def repos_section(today: date, fetch: bool = True) -> list[str] | None:
     except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
         doc = None
     if not isinstance(doc, dict):
-        return ["- sr の状況図を読めない"]
-    return format_repos(doc, today) + notes
+        return ["- sr の状況図を読めない"], []
+    active, stalled = format_repos(doc, today)
+    return active + notes, stalled
