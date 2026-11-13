@@ -54,25 +54,25 @@ def section(out, head):
 def test_todays_sessions_with_theme_and_without(desk):
     out = run(desk, "--date", "2027-10-18")
     # 第 4 回は session.yaml がありテーマが出る。seminar-wed は 10/18 に授業が無い
-    assert section(out, "2027-10-18") == ["- マクロ月・第 4 回・財政政策"]
+    assert section(out, "授業 2027-10-18") == ["- マクロ月・第 4 回・財政政策"]
     out = run(desk, "--date", "2027-10-20")
-    assert section(out, "2027-10-20") == ["- seminar-wed・第 4 回"]
+    assert section(out, "授業 2027-10-20") == ["- seminar-wed・第 4 回"]
 
 
 def test_evening_shows_tomorrow(desk):
     out = run(desk, "--date", "2027-10-17", "--evening")
-    assert "## 2027-10-18" in out
-    assert section(out, "2027-10-18") == ["- マクロ月・第 4 回・財政政策"]
+    assert "## 授業 2027-10-18" in out
+    assert section(out, "授業 2027-10-18") == ["- マクロ月・第 4 回・財政政策"]
 
 
 def test_team_yaml_dir_pattern_is_used_for_the_theme(desk, ghq):
     write(_mon(ghq) / "2027" / "team.yaml", "sessions: {dir: 's{nn}'}\n")
     write(_mon(ghq) / "2027" / "s04" / "session.yaml", "session:\n  title: 別の形\n")
-    assert section(run(desk, "--date", "2027-10-18"), "2027-10-18") == ["- マクロ月・第 4 回・別の形"]
+    assert section(run(desk, "--date", "2027-10-18"), "授業 2027-10-18") == ["- マクロ月・第 4 回・別の形"]
 
 
 def test_deadlines_within_14_days_and_trips(desk):
-    items = section(run(desk, "--date", "2027-10-18"), "14 日")
+    items = section(run(desk, "--date", "2027-10-18"), "締め切り")
     assert "- 10/18〜10/20 学会（○○）" in items
     assert "- 10/25 締め切り: 報告書" in items
     assert "- 11/2 教授会" not in items           # 15 日後
@@ -80,7 +80,7 @@ def test_deadlines_within_14_days_and_trips(desk):
 
 
 def test_deadline_window_is_14_days(desk):
-    items = section(run(desk, "--date", "2027-10-22"), "14 日")
+    items = section(run(desk, "--date", "2027-10-22"), "締め切り")
     assert "- 11/2 教授会" in items                # 11 日後
     assert not any("学会" in i for i in items)     # 終わっている
 
@@ -132,16 +132,16 @@ def test_candidates_stop_at_21_days(desk, ghq):
 def test_without_team_yaml_prep_on_decides(desk):
     # seminar-wed は prep_on: [tue]。10/19（火）に第 4 回（10/20）の準備
     cands = section(run(desk, "--date", "2027-10-19"), "準備の候補")
-    assert cands == ["- この日は会議・出張があり、使える時間が少ない", "- seminar-wed 第 4 回（10/20（水））"]
+    assert cands == ["- 会議・出張あり", "- seminar-wed 第 4 回（10/20（水））"]
     # 準備日でない日は出ない。macro-mon は prep_on が無いので出ない
     assert section(run(desk, "--date", "2027-10-21"), "準備の候補") == ["- なし"]
 
 
 def test_busy_note_is_said_once(desk):
     cands = section(run(desk, "--date", "2027-10-19"), "準備の候補")
-    assert [c for c in cands if "使える時間が少ない" in c] == ["- この日は会議・出張があり、使える時間が少ない"]
+    assert [c for c in cands if "会議・出張あり" in c] == ["- 会議・出張あり"]
     cands = section(run(desk, "--date", "2027-10-26"), "準備の候補")
-    assert not any("使える時間が少ない" in c for c in cands)
+    assert not any("会議・出張あり" in c for c in cands)
 
 
 def _team_commit(repo, text):
@@ -167,7 +167,7 @@ def test_made_up_session_is_a_candidate_with_the_makeup_date(desk, ghq):
 def test_unreadable_base_is_reported_not_listed(desk, ghq):
     _team_commit(_mon(ghq), "sessions: {base: nosuch}\n")
     cands = section(run(desk, "--date", "2027-10-18"), "準備の候補")
-    assert "- マクロ月: 枝 nosuch を読めない（受け入れを判定できない）" in cands
+    assert "- マクロ月: nosuch 読めない" in cands
     assert not any(c.startswith("- マクロ月 第") for c in cands)
 
 
@@ -186,7 +186,7 @@ def test_inbox_and_footer(desk):
     inbox.write(desk, inbox.Item("r1", "raise", "macro-mon", None, 5, datetime(2027, 10, 1), False, "補講日がほしい"))
     out = run(desk, "--date", "2027-10-18")
     assert "r1 macro-mon 第 5 回: 補講日がほしい" in out
-    assert out.rstrip().splitlines()[-1] == "手元の授業レポは fetch していない"
+    assert out.rstrip().splitlines()[-1] == "授業レポは未 fetch"
 
 
 def test_cli_dispatch_and_config_error(tmp_path, monkeypatch, capsys):

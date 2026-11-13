@@ -22,7 +22,7 @@ def test_lists_open_or_recent_newest_first_and_skips_the_rest():
     ]}
     assert repos.format_repos(doc, TODAY) == (
         ["- recent 開 0"],
-        ["- old-busy 開 80（最古 6/2） 最後に触った 2027/1/1"],
+        ["- old-busy 開 80 最古 6/2 最終 2027/1/1"],
     )
 
 
@@ -33,7 +33,7 @@ def test_plans_and_missing_plan_and_stale_fetch():
          {"issue": 51, "path": "gone.md", "done": None, "total": None}],
         fetched="2027-11-10T08:00:00+09:00"))]}
     assert repos.format_repos(doc, TODAY) == ([
-        "- kit 開 2（最古 10/1） #34 3/10 #51 計画が見つからない（11/10 時点）"], [])
+        "- kit 開 2 最古 10/1 #34 3/10 #51 計画なし（11/10 時点）"], [])
 
 
 def test_without_sr_the_section_is_absent():

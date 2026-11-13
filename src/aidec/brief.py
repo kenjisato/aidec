@@ -13,7 +13,7 @@ from .week import _md, _md_wd, _sessions, inbox_section, prep_days
 
 DEADLINE_DAYS = 14
 PREP_DAYS = 21
-FOOTER = "手元の授業レポは fetch していない"
+FOOTER = "授業レポは未 fetch"
 
 
 def _title(ydir: Path, dirname: str | None) -> str | None:
@@ -81,7 +81,7 @@ def _candidates(yd: YearData, c: Course, ghq: Path, day: date) -> tuple[list[tup
     try:
         gitops.git(repo, "rev-parse", "--verify", "-q", f"{base}^{{commit}}")
     except gitops.GitError:
-        return [], f"- {c.name}: 枝 {base} を読めない（受け入れを判定できない）"
+        return [], f"- {c.name}: {base} 読めない"
     pattern = courserepo.layout(ydir, doc)[0]
     end = day + timedelta(days=PREP_DAYS)
     return sorted((s.date, s.n) for s in ss
@@ -97,7 +97,7 @@ def _prep_candidates(yd: YearData, ghq: Path, day: date) -> list[str]:
         found += [(d, c.name, n) for d, n in cands]
         if warning:
             warnings.append(warning)
-    lines = ["- この日は会議・出張があり、使える時間が少ない"] if busy else []
+    lines = ["- 会議・出張あり"] if busy else []
     lines += warnings
     return lines + [f"- {name} 第 {n} 回（{_md_wd(d)}）" for d, name, n in sorted(found)]
 
@@ -107,8 +107,8 @@ def brief_report(yd: YearData, ghq: Path, root: Path, day: date, fetch: bool = T
         return "\n".join([f"## {head}", *(lines or ["- なし"])])
 
     blocks = [
-        block(f"{day.isoformat()}（{'月火水木金土日'[day.weekday()]}）の授業", _todays_sessions(yd, ghq, day)),
-        block(f"{DEADLINE_DAYS} 日以内の締め切りと出張・会議", _upcoming_events(yd, day)),
+        block(f"授業 {day.isoformat()}（{'月火水木金土日'[day.weekday()]}）", _todays_sessions(yd, ghq, day)),
+        block(f"締め切り・出張・会議（{DEADLINE_DAYS} 日）", _upcoming_events(yd, day)),
     ]
     inbox_text = inbox_section(root).strip("\n")
     if inbox_text:
@@ -117,9 +117,9 @@ def brief_report(yd: YearData, ghq: Path, root: Path, day: date, fetch: bool = T
     repo_lines = repos.repos_section(day, fetch)
     if repo_lines is not None:
         active, stalled = repo_lines
-        blocks.append(block(f"動いているレポ（{repos.ACTIVE_DAYS} 日以内に触った。開いている Issue）", active))
+        blocks.append(block("レポ", active))
         if stalled:
-            blocks.append(block("止まっているレポ（Issue が開いたまま。閉じるか、やるか）", stalled))
+            blocks.append(block("止まっているレポ", stalled))
     return "\n\n".join(blocks) + f"\n\n{FOOTER}\n"
 
 

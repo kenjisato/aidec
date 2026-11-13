@@ -26,13 +26,13 @@ def _line(p: dict, iss: dict, today: date, last_d: date | None, stalled: bool) -
     name = str(p.get("slug", "?")).rsplit("/", 1)[-1]
     text = f"{name} 開 {iss.get('open', 0)}"
     if iss.get("oldest_open_at"):
-        text += f"（最古 {_md(_dt(iss['oldest_open_at']).date())}）"
+        text += f" 最古 {_md(_dt(iss['oldest_open_at']).date())}"
     for pl in iss.get("plans") or []:
         done, total = pl.get("done"), pl.get("total")
-        prog = f"{done}/{total}" if done is not None and total is not None else "計画が見つからない"
+        prog = f"{done}/{total}" if done is not None and total is not None else "計画なし"
         text += f" #{pl.get('issue')} {prog}"
     if stalled and last_d is not None:
-        text += f" 最後に触った {last_d.year}/{_md(last_d)}"
+        text += f" 最終 {last_d.year}/{_md(last_d)}"
     if iss.get("fetched_at"):
         fetched = _dt(iss["fetched_at"]).date()
         if fetched < today:
@@ -71,9 +71,9 @@ def repos_section(today: date, fetch: bool = True) -> tuple[list[str], list[str]
             r = subprocess.run([SR, "issues", "fetch"], capture_output=True, text=True,
                                encoding="utf-8", errors="replace", timeout=FETCH_TIMEOUT)
             if r.returncode != 0:
-                notes.append("- 一部のレポは取得できず、前回の値（日付を添える）")
+                notes.append("- 取得失敗あり（前回の値）")
         except (OSError, subprocess.TimeoutExpired):
-            notes.append("- Issue を取得できず、前回の値（日付を添える）")
+            notes.append("- 取得失敗（前回の値）")
     try:
         r = subprocess.run([SR, "list", "--format", "json"], capture_output=True, text=True,
                            encoding="utf-8", errors="replace", timeout=30)
@@ -81,6 +81,6 @@ def repos_section(today: date, fetch: bool = True) -> tuple[list[str], list[str]
     except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
         doc = None
     if not isinstance(doc, dict):
-        return ["- sr の状況図を読めない"], []
+        return ["- sr list 失敗"], []
     active, stalled = format_repos(doc, today)
     return active + notes, stalled
