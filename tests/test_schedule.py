@@ -5,7 +5,7 @@ import pytest
 
 from conftest import write
 from aidec.data import Event, Move, load_year
-from aidec.schedule import (DateEntry, Dates, ScheduleChange, ScheduleError, build_dates, facts_for,
+from aidec.schedule import (DateEntry, Dates, Change, ScheduleError, build_dates, facts_for,
                             read_changes, read_dates, sessions, write_dates)
 
 ISSUED = "2027-09-01 (abc1234)"
@@ -168,9 +168,9 @@ def test_bad_dates(tmp_path, old, new, message):
 def test_read_changes_spec_example(tmp_path):
     cs = read_changes(write(tmp_path / "schedule-changes.yaml", CHANGES))
     assert cs == [
-        ScheduleChange(2, "Instructor away at a conference", mode="online"),
-        ScheduleChange(5, "Recorded lecture", mode="ondemand", release=date(2026, 5, 11), prep_from=date(2026, 5, 8)),
-        ScheduleChange(6, "Instructor ill", cancel=True, date=date(2026, 5, 18), ref="sup-0042"),
+        Change(2, "Instructor away at a conference", mode="online"),
+        Change(5, "Recorded lecture", mode="ondemand", release=date(2026, 5, 11), prep_from=date(2026, 5, 8)),
+        Change(6, "Instructor ill", cancel=True, date=date(2026, 5, 18), ref="sup-0042"),
     ]
 
 
@@ -235,20 +235,20 @@ def test_sessions(tmp_path):
 def test_ondemand_class_date_is_release(tmp_path):
     current = read_dates(write(tmp_path / "schedule.yaml", SCHEDULE))
     s = {x.n: x for x in sessions(_computed(), current,
-                                  [ScheduleChange(1, "x", mode="ondemand", release=date(2026, 4, 15))])}
+                                  [Change(1, "x", mode="ondemand", release=date(2026, 4, 15))])}
     assert (s[1].planned, s[1].date) == (date(2026, 4, 13), date(2026, 4, 15))
 
 
 def test_cancel_settled_by_new_date_is_not_pending(tmp_path):
     current = read_dates(write(tmp_path / "schedule.yaml", SCHEDULE))
     s = {x.n: x for x in sessions(_computed(), current,
-                                  [ScheduleChange(4, "x", cancel=True, date=date(2026, 5, 4))])}
+                                  [Change(4, "x", cancel=True, date=date(2026, 5, 4))])}
     assert (s[4].date, s[4].pending) == (date(2026, 7, 27), False)
 
 
 def test_cancelled_session_has_no_mode(tmp_path):
     current = read_dates(write(tmp_path / "schedule.yaml", SCHEDULE))
-    s = {x.n: x for x in sessions(_computed(), current, [ScheduleChange(3, "x", mode="online")])}
+    s = {x.n: x for x in sessions(_computed(), current, [Change(3, "x", mode="online")])}
     assert (s[3].cancelled, s[3].mode, s[3].date) == (True, None, None)
     assert s[3].change is not None
 
@@ -256,4 +256,4 @@ def test_cancelled_session_has_no_mode(tmp_path):
 def test_change_for_unlisted_session_is_an_error(tmp_path):
     current = read_dates(write(tmp_path / "schedule.yaml", SCHEDULE))
     with pytest.raises(ScheduleError, match="第 7 回"):
-        sessions(_computed(), current, [ScheduleChange(7, "x", mode="online")])
+        sessions(_computed(), current, [Change(7, "x", mode="online")])

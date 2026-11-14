@@ -15,16 +15,6 @@ def test_commit_only_given_paths(tmp_path, git_env):
     assert not gitops.commit_paths(repo, ["a.txt"], "nothing")       # 変更が無ければ False
 
 
-def test_is_dirty(tmp_path, git_env):
-    repo = make_repo(tmp_path / "r")
-    write(repo / "2027" / "schedule.yaml", "x\n")
-    assert gitops.is_dirty(repo, "2027/schedule.yaml")               # 追跡されていない
-    gitops.commit_paths(repo, ["2027/schedule.yaml"], "add")
-    assert not gitops.is_dirty(repo, "2027/schedule.yaml")
-    write(repo / "2027" / "schedule.yaml", "y\n")
-    assert gitops.is_dirty(repo, "2027/schedule.yaml")
-
-
 def test_upstream_pull_push(tmp_path, git_env):
     remote = tmp_path / "remote.git"
     a = make_repo(tmp_path / "a", remote)

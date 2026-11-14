@@ -41,19 +41,8 @@ def is_ahead(repo: Path) -> bool:
     return int(git(repo, "rev-list", "--count", "@{u}..HEAD").strip()) > 0
 
 
-def unpushed_files(repo: Path) -> set[str]:
-    """upstream にまだ push していないコミットが触れたファイル。"""
-    out = git(repo, "log", "@{u}..HEAD", "--name-only", "--format=")
-    return {line.strip() for line in out.splitlines() if line.strip()}
-
-
 def pull_ff_only(repo: Path) -> None:
     git(repo, "pull", "--ff-only", "-q")
-
-
-def is_dirty(repo: Path, rel: str) -> bool:
-    """rel に未コミットの変更があるか（追跡されていないファイルも含む）。"""
-    return bool(git(repo, "status", "--porcelain", "--", rel).strip())
 
 
 def commit_paths(repo: Path, rels: list[str], message: str) -> bool:

@@ -86,8 +86,8 @@ def test_old_layout_schedule_is_not_read(year_dir, ghq):
 
 
 def _session(n, d, cancelled=False):
-    from aidec.schedule import ClassSession
-    return ClassSession(n, d, None if cancelled else d, None, cancelled, (), None)
+    from aidec.schedule import Session
+    return Session(n, d, None if cancelled else d, None, cancelled, (), None)
 
 
 def test_prep_days_are_in_the_week_before():

@@ -1,5 +1,3 @@
-from datetime import date
-
 import pytest
 
 from conftest import add_class, issue_schedule, run_git, write

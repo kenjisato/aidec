@@ -1,15 +1,11 @@
 """授業レポの日程ファイル（IK SPEC §8.8）。
 
-新しい書式: class root（classes/<class id>/）の schedule.yaml を aidec が書き（Dates）、
-schedule-changes.yaml を授業レポの director が書く（ScheduleChange。aidec は読むだけ）。
+class root（classes/<class id>/）の schedule.yaml を aidec が書き（Dates）、
+schedule-changes.yaml を授業レポの director が書く（Change。aidec は読むだけ）。
 各回の授業の日は sessions() が重ねる。
-
-旧い書式（<年度>/schedule.yaml の plan と changes。WorkdeskPart・Change・Session）は、
-呼び出し元（issue・week・check・brief）が新しい書式に移るまで残す。
 """
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
@@ -24,9 +20,6 @@ from .data import Course, Event, Move
 
 # 授業日の事実にする予定の種類（設計書: 出張・兼業・学会）。会議・締め切りなどは week に並べるだけ
 FACT_KINDS = {"trip", "side_job", "conference"}
-CHANGE_KEYS = {"n", "mode", "cancel", "makeup", "reason", "note", "prep_from", "release"}
-_HEADER_PLAN = "workdesk が書く: 学事暦から決まる各回の日付と、その日の事実"
-_HEADER_CHANGES = "授業レポが書く: その授業の事情で plan から変えたこと"
 
 
 class ScheduleError(ValueError):
@@ -49,133 +42,6 @@ def facts_for(d: date, cal: Calendar, events: list[Event]) -> list[str]:
     return out
 
 
-@dataclass(frozen=True)
-class PlanEntry:
-    n: int
-    date: date
-    facts: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class WorkdeskPart:
-    course: str
-    issued: str
-    plan: tuple[PlanEntry, ...]
-    makeup_days: tuple[date, ...]
-
-    def same_content(self, other: "WorkdeskPart") -> bool:
-        return replace(self, issued="") == replace(other, issued="")
-
-
-def build_part(course: Course, cal: Calendar, events: list[Event], issued: str) -> WorkdeskPart:
-    plan = tuple(PlanEntry(s.n, s.date, tuple(facts_for(s.date, cal, events)))
-                 for s in plan_sessions(cal, course.term, course.slot, course.sessions))
-    span = cal.terms[course.term]
-    return WorkdeskPart(course.id, issued, plan, tuple(d for d in cal.makeup_days if d in span))
-
-
-def _plan_seq(part: WorkdeskPart) -> CommentedSeq:
-    items = []
-    for e in part.plan:
-        m = {"n": e.n, "date": e.date}
-        if e.facts:
-            m["facts"] = yamlio.flow_seq(list(e.facts))
-        items.append(yamlio.flow_map(m))
-    return CommentedSeq(items)
-
-
-def _set_part(data: CommentedMap, part: WorkdeskPart) -> None:
-    data["course"] = part.course
-    data["issued"] = part.issued
-    data["plan"] = _plan_seq(part)
-    data["makeup_days"] = yamlio.flow_seq(list(part.makeup_days))
-
-
-_TOP_KEY = re.compile(r"^([A-Za-z_][\w-]*)\s*:(\s|$)")
-
-
-def _top_blocks(text: str, where: str) -> tuple[list[list], list[str]]:
-    """最上位の欄ごとに [欄名, 前に置かれたコメント・空行, 欄の行] に分ける。
-
-    末尾のコメント・空行は別に返す。欄の中の字下げした行・行頭の '-' は、その欄の行とする。
-    """
-    blocks: list[list] = []
-    trivia: list[str] = []
-    for line in text.splitlines(keepends=True):
-        m = _TOP_KEY.match(line)
-        if m:
-            blocks.append([m.group(1), trivia, [line]])
-            trivia = []
-        elif not line.strip() or line.startswith("#") or (not blocks and line.strip() == "---"):
-            trivia.append(line)
-        elif blocks and (line[:1].isspace() or line.startswith("-")):
-            blocks[-1][2].extend(trivia)
-            trivia = []
-            blocks[-1][2].append(line)
-        else:
-            raise ScheduleError(f"{where}: 最上位の欄の形が読めない行がある: {line.rstrip()!r}")
-    return blocks, trivia
-
-
-def _splice(text: str, part: WorkdeskPart, where: str) -> str:
-    """workdesk の 4 つの欄の行だけを差し替える。それ以外の行は一字も変えない。"""
-    data = CommentedMap()
-    _set_part(data, part)
-    rendered = {k: yamlio.dumps(CommentedMap({k: v})) for k, v in data.items()}
-    blocks, tail = _top_blocks(text, where)
-    for b in blocks:
-        if b[0] in rendered:
-            b[2] = [rendered[b[0]]]
-    names = [b[0] for b in blocks]
-    missing = [k for k in rendered if k not in names]
-    at = names.index("changes") if "changes" in names else len(blocks)
-    blocks[at:at] = [[k, [], [rendered[k]]] for k in missing]
-    if "changes" not in names:
-        blocks.append(["changes", [], ["changes: []\n"]])
-    out = "".join("".join(tr) + "".join(lines) for _, tr, lines in blocks) + "".join(tail)
-    if not out.endswith("\n"):
-        out += "\n"
-    return out
-
-
-def write_part(path: Path, part: WorkdeskPart) -> None:
-    """workdesk の部分だけを書き換える。changes とコメントには触れない。"""
-    if not path.exists():
-        data = CommentedMap()
-        _set_part(data, part)
-        data["changes"] = CommentedSeq()
-        data.yaml_set_comment_before_after_key("plan", before=_HEADER_PLAN)
-        data.yaml_set_comment_before_after_key("changes", before=_HEADER_CHANGES)
-        yamlio.dump(data, path)
-        return
-    current = _load(path)
-    if current is not None and not isinstance(current, dict):
-        raise ScheduleError(f"{path}: 対応づけ（course: ... の形）になっていない")
-    with open(path, encoding="utf-8") as f:
-        out = _splice(f.read(), part, str(path))
-    try:
-        yamlio.loads(out)
-    except Exception as e:     # 差し替えた結果が読めないなら書かない
-        raise ScheduleError(f"{path}: 書き換えると読めなくなる（{e}）") from None
-    with open(path, "w", encoding="utf-8", newline="\n") as f:
-        f.write(out)
-
-
-def _part_from_map(data, where: str) -> WorkdeskPart:
-    if not isinstance(data, dict):
-        raise ScheduleError(f"{where}: 対応づけ（course: ... の形）になっていない")
-    for k in ("course", "issued", "plan"):
-        if k not in data:
-            raise ScheduleError(f"{where}: {k} が無い")
-    plan = []
-    for i, e in enumerate(data["plan"] or []):
-        if not isinstance(e, dict) or "n" not in e or not isinstance(e.get("date"), date):
-            raise ScheduleError(f"{where}: plan[{i}] は {{n: 1, date: YYYY-MM-DD}} の形で書く")
-        plan.append(PlanEntry(int(e["n"]), e["date"], tuple(str(f) for f in e.get("facts") or [])))
-    return WorkdeskPart(str(data["course"]), str(data["issued"]), tuple(plan),
-                        tuple(data.get("makeup_days") or []))
-
-
 def _load(path: Path):
     try:
         return yamlio.load(path)
@@ -183,101 +49,9 @@ def _load(path: Path):
         raise ScheduleError(f"{path}: {e}") from None
 
 
-def read_part(path: Path) -> WorkdeskPart:
-    """workdesk の部分だけを読む。changes は見ない。"""
-    return _part_from_map(_load(path), str(path))
-
-
-@dataclass(frozen=True)
-class Change:
-    n: int
-    mode: str | None = None
-    cancel: bool = False
-    makeup: date | None = None
-    reason: str | None = None
-    note: str | None = None
-    prep_from: date | None = None      # 早めの準備が要る回で、準備を始める日
-    release: date | None = None        # オンデマンドなどの公開日
-
-
-def _parse_changes(raw, where: str) -> list[Change]:
-    if raw is None:
-        return []
-    if not isinstance(raw, list):
-        raise ScheduleError(f"{where}: changes は列で書く")
-    out: list[Change] = []
-    for i, c in enumerate(raw):
-        at = f"{where}: changes[{i}]"
-        if not isinstance(c, dict) or "n" not in c:
-            raise ScheduleError(f"{at}: n が無い")
-        unknown = set(c) - CHANGE_KEYS
-        if unknown:
-            raise ScheduleError(f"{at}: 知らない欄 {', '.join(sorted(unknown))}"
-                                f"（使える欄: {', '.join(sorted(CHANGE_KEYS))}）")
-        for k in ("makeup", "prep_from", "release"):
-            v = c.get(k)
-            if v is not None and not isinstance(v, date):
-                raise ScheduleError(f"{at}: {k} が日付として読めない: {v!r}（YYYY-MM-DD で書く）")
-        makeup = c.get("makeup")
-        if makeup is not None and not c.get("cancel"):
-            raise ScheduleError(f"{at}: makeup は cancel: true と一緒に書く")
-        n = int(c["n"])
-        if any(x.n == n for x in out):
-            raise ScheduleError(f"{at}: 第 {n} 回が二度書かれている")
-        out.append(Change(n, c.get("mode"), bool(c.get("cancel", False)), makeup,
-                          c.get("reason"), c.get("note"), c.get("prep_from"), c.get("release")))
-    return out
-
-
-def _change_map(c: Change) -> CommentedMap:
-    d: dict = {"n": c.n}
-    for k in ("mode", "cancel", "makeup", "reason", "note", "prep_from", "release"):
-        v = getattr(c, k)
-        if v not in (None, False):
-            d[k] = v
-    return yamlio.flow_map(d)
-
-
-def load_schedule(path: Path) -> tuple[WorkdeskPart, list[Change]]:
-    data = _load(path)
-    part = _part_from_map(data, str(path))
-    return part, _parse_changes(data.get("changes"), str(path))
-
-
-@dataclass(frozen=True)
-class Session:
-    n: int
-    planned: date
-    date: date | None          # 実際に行う日。休講で補講が未定なら None
-    mode: str | None
-    cancelled: bool
-    facts: tuple[str, ...]
-    change: Change | None
-
-
-def effective_sessions(plan: tuple[PlanEntry, ...], changes: list[Change]) -> list[Session]:
-    ns = {e.n for e in plan}
-    for c in changes:
-        if c.n not in ns:
-            raise ScheduleError(f"changes の第 {c.n} 回は plan に無い")
-    by_n = {c.n: c for c in changes}
-    out = []
-    for e in plan:
-        c = by_n.get(e.n)
-        if c is None:
-            out.append(Session(e.n, e.date, e.date, None, False, e.facts, None))
-        elif c.cancel:
-            out.append(Session(e.n, e.date, c.makeup, c.mode, True, e.facts, c))
-        else:
-            out.append(Session(e.n, e.date, e.date, c.mode, False, e.facts, c))
-    return out
-
-
-# ---- 新しい書式（IK SPEC §8.8）: classes/<class id>/schedule.yaml と schedule-changes.yaml ----
-
 _DATES_KEYS = {"course", "class", "issued", "dates", "makeup_days"}
 _DATE_ENTRY_KEYS = {"n", "date", "cancelled", "notes"}
-_SCHEDULE_CHANGE_KEYS = {"n", "reason", "mode", "release", "prep_from", "cancel", "date", "ref"}
+_CHANGE_KEYS = {"n", "reason", "mode", "release", "prep_from", "cancel", "date", "ref"}
 
 
 @dataclass(frozen=True)
@@ -404,7 +178,7 @@ def read_dates(path: Path) -> Dates:
 
 
 @dataclass(frozen=True)
-class ScheduleChange:
+class Change:
     """schedule-changes.yaml の 1 行。mode（online・ondemand）か cancel のどちらか。"""
     n: int
     reason: str
@@ -416,7 +190,7 @@ class ScheduleChange:
     ref: str | None = None             # 上に上げた変更の inbox の ref
 
 
-def read_changes(path: Path) -> list[ScheduleChange]:
+def read_changes(path: Path) -> list[Change]:
     """schedule-changes.yaml を読む（書かない）。同じ回の後の行が前の行に代わる。無ければ空。"""
     if not path.exists():
         return []
@@ -427,17 +201,17 @@ def read_changes(path: Path) -> list[ScheduleChange]:
     raw = data.get("changes") or []
     if not isinstance(raw, list):
         raise ScheduleError(f"{where}: changes は列で書く")
-    out: dict[int, ScheduleChange] = {}
+    out: dict[int, Change] = {}
     for i, c in enumerate(raw):
         at = f"{where}: changes[{i}]"
         if not isinstance(c, dict) or "n" not in c:
             raise ScheduleError(f"{at}: n が無い")
         if not _is_int(c["n"]) or c["n"] < 1:
             raise ScheduleError(f"{at}: n は 1 以上の整数で書く")
-        unknown = set(c) - _SCHEDULE_CHANGE_KEYS
+        unknown = set(c) - _CHANGE_KEYS
         if unknown:
             raise ScheduleError(f"{at}: 知らない欄 {', '.join(sorted(map(str, unknown)))}"
-                                f"（使える欄: {', '.join(sorted(_SCHEDULE_CHANGE_KEYS))}）")
+                                f"（使える欄: {', '.join(sorted(_CHANGE_KEYS))}）")
         reason = c.get("reason")
         if not isinstance(reason, str) or not reason.strip():
             raise ScheduleError(f"{at}: reason が無い")
@@ -465,24 +239,24 @@ def read_changes(path: Path) -> list[ScheduleChange]:
             if ondemand_only:
                 raise ScheduleError(f"{at}: release・prep_from は mode: ondemand のときだけ書く")
         n = int(c["n"])
-        out[n] = ScheduleChange(n, str(reason), c.get("mode"), c.get("release"), c.get("prep_from"),
+        out[n] = Change(n, str(reason), c.get("mode"), c.get("release"), c.get("prep_from"),
                                 "cancel" in c, c.get("date"), None if ref is None else str(ref))
     return sorted(out.values(), key=lambda x: x.n)
 
 
 @dataclass(frozen=True)
-class ClassSession:
+class Session:
     n: int
     planned: date | None               # 学事暦で計算した日（cancelled の回にも残る）
     date: date | None                  # 授業の日。ondemand なら release。cancelled・未定・載っていない回は None
     mode: str | None
     cancelled: bool                    # schedule.yaml で cancelled: true
     notes: tuple[str, ...]
-    change: ScheduleChange | None
+    change: Change | None
     pending: bool = False              # cancel の date が載っている日のまま: 日は佐藤に聞く
 
 
-def sessions(computed: Dates, current: Dates, changes: list[ScheduleChange]) -> list[ClassSession]:
+def sessions(computed: Dates, current: Dates, changes: list[Change]) -> list[Session]:
     """各回の授業の日。computed は moves を入れずに学事暦で計算したもの、current は授業レポの schedule.yaml。"""
     listed = {e.n: e for e in current.dates}
     ns = {e.n for e in computed.dates}
@@ -504,6 +278,6 @@ def sessions(computed: Dates, current: Dates, changes: list[ScheduleChange]) -> 
                 pending, d = True, None
         elif c is not None and c.mode == "ondemand" and d is not None:
             d = c.release
-        out.append(ClassSession(e.n, e.date, d, c.mode if c and not cancelled else None, cancelled,
+        out.append(Session(e.n, e.date, d, c.mode if c and not cancelled else None, cancelled,
                                 cur.notes if cur else (), c, pending))
     return out

@@ -12,8 +12,7 @@ from . import courserepo, gitops, inbox
 from .cli import KNOWN_ERRORS, error, setup_console
 from .config import data_dir
 from .data import Course, YearData, load_year
-from .schedule import ClassSession as Session
-from .schedule import ScheduleError, build_dates, read_changes, read_dates, sessions
+from .schedule import ScheduleError, Session, build_dates, read_changes, read_dates, sessions
 
 NOT_ISSUED = "（未配布）"
 BAD_SCHEDULE = "（schedule.yaml を読めない）"
