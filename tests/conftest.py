@@ -123,14 +123,15 @@ CLASSES = {"macro-mon": ("macro-2027", "2027-mon3"), "seminar-wed": ("seminar-20
 
 
 def add_class(year_dir, ghq, name):
-    """courses.yaml の授業 name に class: を付け、授業レポに classes/<id>/course.yaml を置く。class root を返す。"""
+    """courses.yaml の授業 name に class: を付け、授業レポに classes/<id>/class.yaml と course.yaml（id）を置く。class root を返す。"""
     cid, cls = CLASSES[name]
     p = year_dir / "courses.yaml"
     text = p.read_text(encoding="utf-8")
     write(p, text.replace(f"repo: github.com/example/{name}\n", f"repo: github.com/example/{name}\n  class: {cls}\n")
           .replace(f"repo: github.com/example/{name},", f"repo: github.com/example/{name}, class: {cls},"))
     croot = ghq / "github.com" / "example" / name / "classes" / cls
-    write(croot / "course.yaml", f"course:\n  id: {cid}\nclasses:\n  - id: {cls}\n    destinations: [{{to: manual}}]\n")
+    write(croot.parent.parent / "course.yaml", f"id: {cid}\ntitle: t\n")
+    write(croot / "class.yaml", f"classes:\n  - id: {cls}\n    destinations: [{{to: manual}}]\n")
     return croot
 
 
@@ -145,7 +146,7 @@ def issue_schedule(year_dir, ghq, name, edit=None):
     (course,) = [c for c in yd.courses if c.id == name]
     path = croot / "schedule.yaml"
     write_dates(path, build_dates(course, yd.calendar_for(course), yd.events, yd.moves,
-                                  "2027-09-01 (abc1234)", course_id=courserepo.course_id(croot)))
+                                  "2027-09-01 (abc1234)", course_id=courserepo.course_id(croot.parent.parent)))
     if edit is not None:
         write(path, edit(path.read_text(encoding="utf-8")))
     return croot

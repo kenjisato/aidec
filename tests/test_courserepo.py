@@ -5,8 +5,6 @@ from aidec.courserepo import base_branch, class_dir, class_root, course_id, layo
 
 # IK の course.id（macro-2027）は courses.yaml の id（macro-mon）と別のもの。日程の course: には前者を書く
 COURSE_YAML = """\
-course:
-  id: macro-2027
 classes:
   - id: 2027-mon3
     destinations: [{to: manual}]
@@ -19,30 +17,34 @@ def repo(tmp_path):
 
 
 def test_class_root(repo):
-    write(repo / "classes" / "2027-mon3" / "course.yaml", COURSE_YAML)
+    write(repo / "classes" / "2027-mon3" / "class.yaml", COURSE_YAML)
     assert class_root(repo, "2027-mon3") == repo / "classes" / "2027-mon3"
 
 
 @pytest.mark.parametrize("text", [
-    "course: {id: macro-2027}\n",                                                     # classes が無い
+    "x: 1\n",                                                                        # classes が無い
     COURSE_YAML + "  - id: 2027-wed2\n    destinations: [{to: manual}]\n",       # 2 つある
     COURSE_YAML.replace("2027-mon3", "2027-tue1"),                               # id が違う
     "course: [\n",                                                               # 読めない
 ])
 def test_class_root_none(repo, text):
-    write(repo / "classes" / "2027-mon3" / "course.yaml", text)
+    write(repo / "classes" / "2027-mon3" / "class.yaml", text)
     assert class_root(repo, "2027-mon3") is None
 
 
 def test_course_id(repo):
-    root = repo / "classes" / "2027-mon3"
-    assert course_id(root) is None
-    write(root / "course.yaml", COURSE_YAML)
-    assert course_id(root) == "macro-2027"
+    assert course_id(repo) is None
+    write(repo / "course.yaml", "id: macro-2027\ntitle: t\n")
+    assert course_id(repo) == "macro-2027"
+
+
+def test_class_root_none_with_only_old_course_yaml(repo):
+    write(repo / "classes" / "2027-mon3" / "course.yaml", "course: {id: macro-2027}\n" + COURSE_YAML)
+    assert class_root(repo, "2027-mon3") is None
 
 
 def test_class_root_ignores_year_dir(repo):
-    write(repo / "2027" / "course.yaml", COURSE_YAML)
+    write(repo / "2027" / "class.yaml", COURSE_YAML)
     assert class_root(repo, "2027-mon3") is None
     assert class_root(repo, None) is None
 

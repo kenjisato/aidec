@@ -27,8 +27,9 @@ def classes(workdesk_root, ghq):
     run_git(workdesk_root, "commit", "-q", "-am", "class を付ける")
     for name, (cid, cls) in CLASSES.items():
         repo = course_repo(ghq, name)
-        write(repo / "classes" / cls / "course.yaml",
-              f"course:\n  id: {cid}\nclasses:\n  - id: {cls}\n    destinations: [{{to: manual}}]\n")
+        write(repo / "course.yaml", f"id: {cid}\ntitle: t\n")
+        write(repo / "classes" / cls / "class.yaml",
+              f"classes:\n  - id: {cls}\n    destinations: [{{to: manual}}]\n")
         run_git(repo, "add", "-A")
         run_git(repo, "commit", "-q", "-m", "classes/")
         run_git(repo, "push", "-q")
@@ -82,6 +83,20 @@ def test_overwrites_uncommitted_schedule(workdesk_root, ghq):
     # 前に書いたものを director がまだコミットしていなくても止めない
     assert run_issue(workdesk_root, "--course", "macro-mon", "--today", "2027-09-10") == 0
     assert "集中講義" in sched(ghq, "macro-mon").read_text(encoding="utf-8")
+
+
+def test_skips_unreadable_schedule(workdesk_root, ghq, capsys):
+    old = "course: macro-mon\nplan: [old format]\n"
+    path = sched(ghq, "macro-mon")
+    path.write_bytes(old.encode("utf-8"))
+    head = run_git(workdesk_root, "rev-parse", "HEAD")
+    assert run_issue(workdesk_root, "--today", "2027-09-01") == 0
+    assert path.read_bytes() == old.encode("utf-8")
+    out = capsys.readouterr().out
+    assert "macro-mon: unreadable schedule.yaml" in out
+    assert "seminar-wed: written" in out                     # 他の授業は続ける
+    assert not (workdesk_root / "2027" / "issued" / "macro-mon.yaml").exists()
+    assert run_git(workdesk_root, "rev-parse", "HEAD") != head   # seminar-wed の控え
 
 
 def test_wrong_branch_writes_nothing(workdesk_root, ghq, capsys):

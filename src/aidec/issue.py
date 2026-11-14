@@ -9,7 +9,7 @@ from . import courserepo, gitops
 from .cli import KNOWN_ERRORS, error, setup_console
 from .config import data_dir
 from .data import Course, YearData, load_year
-from .schedule import build_dates, write_dates
+from .schedule import ScheduleError, build_dates, read_dates, write_dates
 
 
 class IssueError(RuntimeError):
@@ -22,8 +22,16 @@ def _issue_course(yd: YearData, course: Course, root: Path, ghq: Path, today: da
     repo = ghq / course.repo if course.repo else None
     croot = courserepo.class_root(repo, course.class_id) if repo else None
     dates = build_dates(course, cal, yd.events, yd.moves, issued,
-                        course_id=courserepo.course_id(croot) if croot else None)
+                        course_id=courserepo.course_id(repo) if repo else None)
     issued_path = yd.dir / "issued" / f"{course.id}.yaml"
+    target = croot / "schedule.yaml" if croot else None
+    if target is not None and target.exists():
+        # 旧い書式など読めない schedule.yaml は IK が変換する。それまで上書きしない
+        try:
+            read_dates(target)
+        except ScheduleError:
+            print(f"{course.id}: unreadable schedule.yaml")
+            return
 
     if dry_run:
         print(f"== {course.id}")
@@ -46,7 +54,6 @@ def _issue_course(yd: YearData, course: Course, root: Path, ghq: Path, today: da
         print(f"{course.id}: not on {base}")
         return
 
-    target = croot / "schedule.yaml"
     rel = target.relative_to(repo).as_posix()
     # 授業レポでは書くだけ。コミットは director がする
     if write_dates(target, dates):

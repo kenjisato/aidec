@@ -84,10 +84,11 @@ def test_write_and_read_back(tmp_path, yd, mon):
 def test_course_is_the_class_roots_course_id(tmp_path, yd, mon):
     from aidec.courserepo import class_root, course_id
     repo = tmp_path / "macro-mon"
-    write(repo / "classes" / "2027-mon3" / "course.yaml",
-          "course: {id: macro-2027}\nclasses:\n  - {id: 2027-mon3, destinations: [{to: manual}]}\n")
+    write(repo / "course.yaml", "id: macro-2027\n")
+    write(repo / "classes" / "2027-mon3" / "class.yaml",
+          "classes:\n  - {id: 2027-mon3, destinations: [{to: manual}]}\n")
     root = class_root(repo, mon.class_id)
-    d = build_dates(mon, yd.calendar_for(mon), yd.events, [], ISSUED, course_id=course_id(root))
+    d = build_dates(mon, yd.calendar_for(mon), yd.events, [], ISSUED, course_id=course_id(repo))
     assert write_dates(root / "schedule.yaml", d) is True
     assert (root / "schedule.yaml").read_text(encoding="utf-8").startswith("course: macro-2027\nclass: 2027-mon3\n")
     assert _build(yd, mon).course == "macro-mon"          # class root が無いとき（dry-run）は courses.yaml の id

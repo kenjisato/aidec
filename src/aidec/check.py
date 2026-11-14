@@ -103,7 +103,7 @@ def course_problems(yd: YearData, course: Course, ghq: Path) -> list[Problem]:
     moved = {m.n for m in yd.moves if m.course == course.id}
     if croot is None:
         # まだ classes/ に移っていない授業。配れないのは注意だけにし、事実への対応は moves で見る
-        where = f"classes/{course.class_id}/course.yaml" if course.class_id else "courses.yaml の class:"
+        where = f"classes/{course.class_id}/class.yaml" if course.class_id else "courses.yaml の class:"
         return ([Problem(course.id, "not_issued", None, f"class root が無い（{where}）", soft=True)]
                 + _undecided(course.id, computed, moved)
                 + check_research_days(course.id, course.prep_on, computed, computed, yd.research_days))
@@ -116,7 +116,7 @@ def course_problems(yd: YearData, course: Course, ghq: Path) -> list[Problem]:
     except ScheduleError as e:
         return [Problem(course.id, "bad_schedule", None, str(e))]
     expected = build_dates(course, cal, yd.events, yd.moves, current.issued,
-                           course_id=courserepo.course_id(croot))
+                           course_id=courserepo.course_id(repo))
     out: list[Problem] = []
     changes, ss = [], []
     try:

@@ -79,7 +79,7 @@ def build_dates(course: Course, cal: Calendar, events: list[Event], moves: list[
                 *, course_id: str | None = None) -> Dates:
     """学事暦で各回の日を出し、moves（この授業の分）で日付を置き換えるか cancelled にする。
 
-    course_id は書く course: の値（class root の course.yaml の course.id）。無ければ courses.yaml の id。
+    course_id は書く course: の値（course root の course.yaml の id）。無ければ courses.yaml の id。
     """
     by_n = {m.n: m for m in moves if m.course == course.id}
     entries = []

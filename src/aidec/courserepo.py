@@ -1,7 +1,7 @@
 """授業レポの置き方（SPEC §8.2・§8.8）。
 
-新しい置き方: course root（レポのルート）に team.yaml、class root（classes/<class id>/）に
-course.yaml・packet.yaml・schedule.yaml。まだ classes/ に移っていないレポは <年度>/ に team.yaml を置く。
+新しい置き方: course root（レポのルート）に course.yaml（id）・team.yaml、class root（classes/<class id>/）に
+class.yaml・packet.yaml・schedule.yaml。まだ classes/ に移っていないレポは <年度>/ に team.yaml を置く。
 """
 from __future__ import annotations
 
@@ -20,22 +20,21 @@ def _load_map(path: Path) -> dict:
     return {}
 
 
-def course_id(root: Path) -> str | None:
-    """<root>/course.yaml の course.id（IK の id。courses.yaml の id とは別）。"""
-    course = _load_map(root / "course.yaml").get("course")
-    cid = course.get("id") if isinstance(course, dict) else None
+def course_id(repo: Path) -> str | None:
+    """<repo>/course.yaml（course root）の id（IK の id。courses.yaml の id とは別）。"""
+    cid = _load_map(repo / "course.yaml").get("id")
     return str(cid) if cid else None
 
 
 def class_root(repo: Path, class_id: str | None) -> Path | None:
     """日程を置く class root。classes/<class_id>/ だけを見る（<年度>/ は見ない）。
 
-    そこの course.yaml の classes がちょうど 1 つで、その id が class_id のときだけ返す。
+    そこの class.yaml の classes がちょうど 1 つで、その id が class_id のときだけ返す。
     """
     if not class_id:
         return None
     root = repo / "classes" / class_id
-    classes = _load_map(root / "course.yaml").get("classes")
+    classes = _load_map(root / "class.yaml").get("classes")
     if not isinstance(classes, list) or len(classes) != 1:
         return None
     only = classes[0]
