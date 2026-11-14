@@ -1,4 +1,4 @@
-"""<年度>/ の学事暦・courses.yaml・events.yaml を読む。"""
+"""<年度>/ の学事暦・courses.yaml・events.yaml・settings.yaml・moves.yaml を読む。"""
 from __future__ import annotations
 
 import re
@@ -224,8 +224,10 @@ def load_moves(year_dir: Path, courses: list[Course] | None = None) -> list[Move
         cid, n = str(m["course"]), m["n"]
         if isinstance(n, bool) or not isinstance(n, int):
             raise DataError(f"{where}.n: 整数で書く: {n!r}")
-        d, cancelled = m.get("date"), m.get("cancelled") is True
-        if d is not None and not isinstance(d, date):
+        d, cancelled = m.get("date"), m.get("cancelled", False)
+        if not isinstance(cancelled, bool):
+            raise DataError(f"{where}.cancelled: cancelled: true か false で書く: {cancelled!r}")
+        if d is not None and type(d) is not date:       # 時刻付き（datetime）も弾く
             raise DataError(f"{where}.date: 日付として読めない: {d!r}（YYYY-MM-DD で書く）")
         if d is not None and cancelled:
             raise DataError(f"{where}: date と cancelled は同時に書けない")

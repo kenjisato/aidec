@@ -152,6 +152,9 @@ def test_load_moves(year_dir):
      "macro-mon の第 3 回が二つある"),
     ("- {course: macro-mon, n: 3, date: 2027-10-30, room: A}", "room"),
     ("- {course: macro-mon, n: 3, date: 2027/10/30}", "日付として読めない"),
+    ("- {course: macro-mon, n: 3, date: 2027-10-30 10:00:00}", "日付として読めない"),
+    ("- {course: macro-mon, n: 3, cancelled: 1}", "cancelled: true か false"),
+    ("- {course: macro-mon, n: 3, date: 2027-10-30, cancelled: \"no\"}", "cancelled: true か false"),
 ])
 def test_bad_moves(year_dir, text, message):
     write(year_dir / "moves.yaml", text + "\n")
