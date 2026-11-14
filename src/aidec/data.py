@@ -15,7 +15,8 @@ _COURSE_KEYS = {"id", "repo", "calendar", "term", "slot", "sessions", "prep_on",
 _MOVE_KEYS = {"course", "n", "date", "cancelled", "notes", "ref"}
 _SETTINGS_KEYS = {"research_days"}
 _EVENT_KEYS = {"date", "end", "kind", "title", "prep", "note"}
-ID = re.compile(r"[A-Za-z0-9_-]+")       # 授業・class の id に使える文字
+ID = re.compile(r"[A-Za-z0-9_-]+")       # 授業の id に使える文字
+CLASS_ID = re.compile(r"[a-z0-9-]+")     # IK の class id（^[a-z0-9-]+$）
 
 
 class DataError(ValueError):
@@ -156,8 +157,8 @@ def _load_courses(path: Path, calendars: dict[str, Calendar]) -> list[Course]:
             raise DataError(f"{where}: repo は ghq root からの相対パスで書く: {repo}")
         cls = c.get("class")
         if cls is not None and not (isinstance(cls, (str, int)) and not isinstance(cls, bool)
-                                    and ID.fullmatch(str(cls))):
-            raise DataError(f"{where}.class: 英数字・_・- で書く: {cls!r}")
+                                    and CLASS_ID.fullmatch(str(cls))):
+            raise DataError(f"{where}.class: 小文字の英字・数字・- で書く: {cls!r}")
         try:
             slot = parse_slot(c["slot"])
         except PlanError as e:
@@ -247,8 +248,8 @@ def load_moves(year_dir: Path, courses: list[Course] | None = None) -> list[Move
             raise DataError(f"{path.name}: {cid} の第 {n} 回が二つある")
         seen.add((cid, n))
         notes = m.get("notes") or []
-        if not isinstance(notes, list):
-            raise DataError(f"{where}.notes: 文字列の列で書く")
+        if not isinstance(notes, list) or not all(isinstance(x, str) and x.strip() for x in notes):
+            raise DataError(f"{where}.notes: 空でない文字列の列で書く")
         out.append(Move(cid, n, d, cancelled, tuple(str(x) for x in notes),
                         None if m.get("ref") is None else str(m["ref"])))
     return out

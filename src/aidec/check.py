@@ -38,6 +38,13 @@ def _is_class_or_makeup_day(cal: Calendar, d: date) -> bool:
     return cal.term_of(d) is not None and cal.weekday_of(d) in WEEKDAYS[:5]
 
 
+def _undecided(course_id: str, computed: Dates, decided: set[int]) -> list[Problem]:
+    """計算した日に事実（出張・休講など）がある回で、decided（moves・changes に書いた回）に無いもの。"""
+    return [Problem(course_id, "undecided", e.date,
+                    f"第 {e.n} 回（{_md(e.date)}）: {'、'.join(e.notes)} への対応が無い")
+            for e in computed.dates if e.notes and e.n not in decided]
+
+
 def check_course(course_id: str, cal: Calendar, computed: Dates, expected: Dates, current: Dates,
                  decided: set[int]) -> list[Problem]:
     """(1) 配った日付が今の学事暦・moves から作り直したものと違う。
@@ -47,10 +54,7 @@ def check_course(course_id: str, cal: Calendar, computed: Dates, expected: Dates
     out = []
     if not expected.same_content(current):
         out.append(Problem(course_id, "stale", None, "配った schedule.yaml が今の学事暦・moves・予定と違う。issue を走らせる"))
-    for e in computed.dates:
-        if e.notes and e.n not in decided:
-            out.append(Problem(course_id, "undecided", e.date,
-                               f"第 {e.n} 回（{_md(e.date)}）: {'、'.join(e.notes)} への対応が無い"))
+    out += _undecided(course_id, computed, decided)
     planned = {e.n: e.date for e in computed.dates}
     for e in current.dates:
         if e.date is None or e.date == planned.get(e.n):
@@ -95,13 +99,17 @@ def course_problems(yd: YearData, course: Course, ghq: Path) -> list[Problem]:
     cal = yd.calendar_for(course)
     repo = ghq / course.repo
     croot = courserepo.class_root(repo, course.class_id)
+    computed = build_dates(course, cal, yd.events, [], "")
+    moved = {m.n for m in yd.moves if m.course == course.id}
     if croot is None:
+        # まだ classes/ に移っていない授業。配れないのは注意だけにし、事実への対応は moves で見る
         where = f"classes/{course.class_id}/course.yaml" if course.class_id else "courses.yaml の class:"
-        return [Problem(course.id, "not_issued", None, f"class root が無い（{where}）")]
+        return ([Problem(course.id, "not_issued", None, f"class root が無い（{where}）", soft=True)]
+                + _undecided(course.id, computed, moved)
+                + check_research_days(course.id, course.prep_on, computed, computed, yd.research_days))
     path = croot / "schedule.yaml"
     if not path.exists():
         return [Problem(course.id, "not_issued", None, f"{path} がまだ無い")]
-    computed = build_dates(course, cal, yd.events, [], "")
     try:
         current = read_dates(path)
         sessions(computed, current, [])
@@ -109,7 +117,6 @@ def course_problems(yd: YearData, course: Course, ghq: Path) -> list[Problem]:
         return [Problem(course.id, "bad_schedule", None, str(e))]
     expected = build_dates(course, cal, yd.events, yd.moves, current.issued,
                            course_id=courserepo.course_id(croot))
-    moved = {m.n for m in yd.moves if m.course == course.id}
     out: list[Problem] = []
     changes, ss = [], []
     try:

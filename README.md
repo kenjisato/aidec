@@ -35,6 +35,7 @@ uv run aidec supervise             # instructor-kit の上位コマンド（通�
 
 - `<年度>/courses.yaml` の各授業に `class: <class id>`（授業レポの `classes/` の下の名前）
 - `<年度>/moves.yaml`: 決まった休講・補講・移動。`- {course, n, date}` か `- {course, n, cancelled: true}`、`notes`・`ref` は任意
+- 授業日に出張などが重なっても予定どおり行う回は、`date` を予定の日のままにした move で書く（`check` の undecided が消える）
 
 ## 導入
 

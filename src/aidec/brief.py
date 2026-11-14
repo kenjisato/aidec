@@ -48,7 +48,7 @@ def _todays_sessions(yd: YearData, ghq: Path, day: date) -> list[str]:
     for c in yd.courses:
         ss, _ = _sessions(yd, c, ghq)
         cdir = _class_dir(yd, c, ghq)
-        pattern = courserepo.layout(cdir)[0] if cdir else "{nn}"
+        pattern = courserepo.layout(cdir, courserepo.team(ghq / c.repo, cdir))[0] if cdir else "{nn}"
         for s in ss:
             if s.pending and s.change.date == day:
                 lines.append(f"- {c.name}・第 {s.n} 回 {PENDING}")

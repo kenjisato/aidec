@@ -73,6 +73,12 @@ def test_packet_yaml_dir_pattern_is_used_for_the_theme(desk, ghq):
     assert section(run(desk, "--date", "2027-10-18"), "授業 2027-10-18") == ["- マクロ月・第 4 回・別の形"]
 
 
+def test_course_root_team_yaml_dir_pattern_is_used_for_the_theme(desk, ghq):
+    write(_mon(ghq) / "team.yaml", "sessions: {dir: 's{nn}'}\n")              # packet.yaml が無い
+    write(_mon(ghq) / MON_CLASS / "s04" / "session.yaml", "session:\n  title: 別の形\n")
+    assert section(run(desk, "--date", "2027-10-18"), "授業 2027-10-18") == ["- マクロ月・第 4 回・別の形"]
+
+
 def test_old_team_yaml_dir_pattern_is_used_for_the_theme(desk, ghq):
     write(ghq / SEM / "2027" / "team.yaml", "sessions: {dir: 's{nn}'}\n")
     write(ghq / SEM / "2027" / "s04" / "session.yaml", "session:\n  title: 別の形\n")

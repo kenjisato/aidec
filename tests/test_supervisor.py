@@ -66,6 +66,13 @@ def test_ask_reads_packet_yaml(desk, ghq):
     assert str(ghq / MON / "plan/map.md") in answer
 
 
+def test_ask_reads_course_root_team_yaml(desk, ghq):
+    write(ghq / "github.com/example/macro-mon/team.yaml", "sessions: {dir: 's{nn}'}\n")   # packet.yaml が無い
+    write(ghq / MON / "s07" / "session.yaml", "session:\n  title: 景気循環\n")
+    answer = supervisor.handle(req(verb="ask", text="景気循環"), desk, NOW)["answer"]
+    assert str(ghq / MON / "s07/session.yaml") in answer
+
+
 def test_ask_reads_a_repo_not_moved_to_classes(desk, ghq):
     sem = ghq / "github.com" / "example" / "seminar-wed" / "2027"
     write(sem / "03" / "session.yaml", "session:\n  title: 計量の演習\n")

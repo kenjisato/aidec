@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from conftest import CLASSES, add_class, issue_schedule, write
+from conftest import CLASSES, issue_schedule, write
 from aidec import check
 
 
@@ -135,12 +135,39 @@ def test_not_issued_and_bad_schedule(setup, ghq):
     assert kinds(run(root, ghq)) == [("macro-mon", "bad_schedule", None), ("seminar-wed", "not_issued", None)]
 
 
-def test_repo_not_moved_to_classes_is_not_issued(year_dir, ghq):
-    # classes/ が無いレポ。旧い <年度>/schedule.yaml があっても読まない
+def test_repo_not_moved_to_classes(year_dir, ghq, capsys):
+    # classes/ が無いレポ。旧い <年度>/schedule.yaml があっても読まない。class root が無いのは注意だけ
     write(ghq / "github.com/example/seminar-wed/2027/schedule.yaml", "course: seminar-wed\nplan: []\n")
-    add_class(year_dir, ghq, "macro-mon")
+    write(year_dir / "moves.yaml",
+          "- {course: macro-mon, n: 4, date: 2027-10-18, notes: [学会中だが行う]}\n"     # 予定の日のまま行う
+          "- {course: macro-mon, n: 7, date: 2027-11-20}\n")
     got = run(year_dir.parent, ghq)
-    assert kinds(got) == [("macro-mon", "not_issued", None), ("seminar-wed", "not_issued", None)]
+    # 学会（10/18〜10/20）に当たる seminar-wed の第 4 回は、moves に無いので undecided
+    assert kinds(got) == [("macro-mon", "not_issued", None), ("seminar-wed", "not_issued", None),
+                          ("seminar-wed", "undecided", date(2027, 10, 20))]
+    assert [p.soft for p in got if p.kind == "not_issued"] == [True, True]
+    assert check.main(["2027", "--root", str(year_dir.parent)]) == 1
+    write(year_dir / "moves.yaml", "- {course: macro-mon, n: 4, date: 2027-10-18}\n"
+                                   "- {course: macro-mon, n: 7, date: 2027-11-20}\n"
+                                   "- {course: seminar-wed, n: 4, date: 2027-10-20}\n")
+    capsys.readouterr()
+    assert check.main(["2027", "--root", str(year_dir.parent)]) == 0
+    assert "ぶつかりは無い" in capsys.readouterr().out
+
+
+def test_research_day_without_class_root(year_dir, ghq):
+    write(year_dir / "settings.yaml", "research_days: [fri]\n")
+    courses = (year_dir / "courses.yaml").read_text(encoding="utf-8")
+    write(year_dir / "courses.yaml", courses.replace("  sessions: 16\n", "  sessions: 16\n  prep_on: [fri]\n"))
+    got = [p for p in run(year_dir.parent, ghq) if p.kind == "research_day"]
+    assert [(p.course, p.soft) for p in got] == [("macro-mon", True)]
+
+
+def test_missing_schedule_in_class_root_is_hard(setup, ghq):
+    root, _ = setup
+    (croot(ghq, "seminar-wed") / "schedule.yaml").unlink()
+    (p,) = run(root, ghq)
+    assert (p.kind, p.soft) == ("not_issued", False)
 
 
 def test_bad_moves_stop_check(setup, year_dir, capsys):

@@ -25,6 +25,7 @@ description: Use when the user tells a schedule item or request by mouth, in the
 
 休講・補講・日付の移動が決まったら、`<data_dir>/<年度>/moves.yaml` に 1 行足し（見せてから）、`aidec issue <年度> --course <id>` で配る。
 `- {course: <id>, n: 7, date: YYYY-MM-DD, ref: <ref>}`（移す）か `- {course: <id>, n: 7, cancelled: true, ref: <ref>}`（補講しない）。`notes` は任意。
+授業日に出張などが重なっても予定どおり行うなら、`date` を予定の日のままにした行を足す。
 `aidec issue` は授業レポの作業ツリーに `schedule.yaml` を書くだけで、コミットは授業の側（director）がする。そのことを利用者に一言伝える。
 
 ## 手順

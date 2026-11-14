@@ -127,7 +127,7 @@ def test_course_class_id(year_dir):
     assert yd.courses[1].class_id is None
 
 
-@pytest.mark.parametrize("cls", ["../x", "a b", "'2027/mon3'", "[a]"])
+@pytest.mark.parametrize("cls", ["../x", "a b", "'2027/mon3'", "[a]", "2027-Mon3", "2027_mon3"])
 def test_bad_course_class_id(year_dir, cls):
     write(year_dir / "courses.yaml",
           f"- {{id: x, class: {cls}, calendar: univa, term: fall, slot: mon-1, sessions: 15}}\n")
@@ -162,6 +162,9 @@ def test_load_moves(year_dir):
     ("- {course: macro-mon, n: 3, date: 2027/10/30}", "日付として読めない"),
     ("- {course: macro-mon, n: 3, date: 2027-10-30 10:00:00}", "日付として読めない"),
     ("- {course: macro-mon, n: 3, cancelled: 1}", "cancelled: true か false"),
+    ("- {course: macro-mon, n: 3, cancelled: true, notes: [\"\"]}", "notes"),
+    ("- {course: macro-mon, n: 3, cancelled: true, notes: [null]}", "notes"),
+    ("- {course: macro-mon, n: 3, cancelled: true, notes: [\" \"]}", "notes"),
     ("- {course: macro-mon, n: 3, date: 2027-10-30, cancelled: \"no\"}", "cancelled: true か false"),
 ])
 def test_bad_moves(year_dir, text, message):
