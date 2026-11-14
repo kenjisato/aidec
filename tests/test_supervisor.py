@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from conftest import make_repo, run_git, write
+from conftest import add_class, make_repo, run_git, write
 from aidec import supervisor
 
 NOW = datetime(2027, 11, 5, 9, 30, tzinfo=timezone.utc)
@@ -14,14 +14,17 @@ NOW = datetime(2027, 11, 5, 9, 30, tzinfo=timezone.utc)
 @pytest.fixture
 def desk(tmp_path, git_env, year_dir, ghq, monkeypatch):
     """リモート付きのデータのレポ、授業レポの中身、設定ファイル。"""
+    mon = add_class(year_dir, ghq, "macro-mon")          # 新しい置き方: classes/2027-mon3/
     root = make_repo(year_dir.parent, tmp_path / "remotes" / "desk.git")
     cfg = write(tmp_path / "config.yaml", f"data_dir: {root}\n")
     monkeypatch.setenv("AIDEC_CONFIG", str(cfg))
     monkeypatch.setattr(supervisor, "_detached_push", lambda repo: None)
-    mon = ghq / "github.com" / "example" / "macro-mon" / "2027"
     write(mon / "05" / "session.yaml", "session:\n  title: 財政政策と乗数効果\n")
     write(mon / "course-map.md", "- 第 5 回 財政政策\n")
     return root
+
+
+MON = "github.com/example/macro-mon/classes/2027-mon3"
 
 
 def req(**kw):
@@ -45,17 +48,33 @@ def test_ask_hits_title_and_map(desk, ghq):
     res = supervisor.handle(req(verb="ask", text="乗数効果"), desk, NOW)
     assert res["status"] == "answered"
     assert "macro-mon" in res["answer"] and "第 5 回" in res["answer"]
-    assert str(ghq / "github.com/example/macro-mon/2027/05/session.yaml") in res["answer"]
+    assert str(ghq / MON / "05/session.yaml") in res["answer"]
 
 
 def test_ask_without_hit_lists_course_maps(desk, ghq):
     res = supervisor.handle(req(verb="ask", text="ゲーム理論"), desk, NOW)
     assert res["status"] == "answered"
-    assert str(ghq / "github.com/example/macro-mon/2027/course-map.md") in res["answer"]
+    assert str(ghq / MON / "course-map.md") in res["answer"]
+
+
+def test_ask_reads_packet_yaml(desk, ghq):
+    write(ghq / MON / "packet.yaml", "sessions: {dir: 's{nn}', map: plan/map.md}\n")
+    write(ghq / MON / "s07" / "session.yaml", "session:\n  title: 景気循環\n")
+    write(ghq / MON / "plan" / "map.md", "- 第 8 回 物価\n")
+    answer = supervisor.handle(req(verb="ask", text="景気循環と物価"), desk, NOW)["answer"]
+    assert str(ghq / MON / "s07/session.yaml") in answer
+    assert str(ghq / MON / "plan/map.md") in answer
+
+
+def test_ask_reads_a_repo_not_moved_to_classes(desk, ghq):
+    sem = ghq / "github.com" / "example" / "seminar-wed" / "2027"
+    write(sem / "03" / "session.yaml", "session:\n  title: 計量の演習\n")
+    res = supervisor.handle(req(verb="ask", text="計量"), desk, NOW)
+    assert str(sem / "03" / "session.yaml") in res["answer"]
 
 
 def test_ask_with_a_clone_but_no_map_says_so(desk, ghq):
-    mon = ghq / "github.com" / "example" / "macro-mon" / "2027"
+    mon = ghq / MON
     (mon / "course-map.md").unlink()
     (mon / "05" / "session.yaml").unlink()
     res = supervisor.handle(req(verb="ask", text="ゲーム理論"), desk, NOW)
@@ -99,7 +118,7 @@ def test_ask_with_a_japanese_sentence(desk):
 
 
 def test_ask_skips_unknown_placeholder_in_team_yaml(desk, ghq):
-    write(ghq / "github.com/example/macro-mon/2027/team.yaml", "sessions: {dir: '{zz}'}\n")
+    write(ghq / MON / "packet.yaml", "sessions: {dir: '{zz}'}\n")
     res = supervisor.handle(req(verb="ask", text="乗数効果"), desk, NOW)
     assert res["status"] == "answered"
 

@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import gitops, inbox, yamlio
+from .courserepo import class_dir
 from .courserepo import layout as _layout
 from .config import ConfigError, data_dir
 
@@ -33,7 +34,7 @@ def _words(text: str) -> list[str]:
 
 
 def _course_repos(data: Path):
-    """(授業の id, 名前, 授業レポの年度ディレクトリ)。クローンの無い授業は飛ばす。"""
+    """(授業の id, 名前, 回のディレクトリを置く場所)。classes/<class>/ が無ければ <年度>/。クローンの無い授業は飛ばす。"""
     root = gitops.ghq_root()
     for yfile in sorted(data.glob("[0-9]*/courses.yaml")):
         if not yfile.parent.name.isdigit():
@@ -42,9 +43,10 @@ def _course_repos(data: Path):
             repo = c.get("repo")
             if not repo:
                 continue
-            ydir = root / repo / yfile.parent.name
-            if ydir.is_dir():
-                yield str(c["id"]), str(c.get("label") or c["id"]), ydir
+            cls = c.get("class")
+            cdir = class_dir(root / repo, int(yfile.parent.name), str(cls) if cls else None)
+            if cdir.is_dir():
+                yield str(c["id"]), str(c.get("label") or c["id"]), cdir
 
 
 def _raw_courses(path: Path) -> list[dict]:
@@ -60,9 +62,9 @@ def _ask(text: str, data: Path) -> str:
     hits: list[str] = []
     maps: list[str] = []
     seen = 0
-    for cid, name, ydir in _course_repos(data):
+    for cid, name, cdir in _course_repos(data):
         seen += 1
-        pattern, cmap = _layout(ydir)
+        pattern, cmap = _layout(cdir)
         if cmap.is_file():
             maps.append(f"{name}: {cmap}")
             for line in cmap.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -70,7 +72,7 @@ def _ask(text: str, data: Path) -> str:
                     hits.append(f"{name} | {line.strip()} | {cmap}")
         for n in range(100):
             try:
-                sfile = ydir / pattern.format(nn=f"{n:02d}", n=n) / "session.yaml"
+                sfile = cdir / pattern.format(nn=f"{n:02d}", n=n) / "session.yaml"
             except (KeyError, IndexError, ValueError, AttributeError):
                 break
             if not sfile.is_file():

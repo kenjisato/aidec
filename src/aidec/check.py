@@ -8,11 +8,11 @@ from pathlib import Path
 
 from classdays.calendar import WEEKDAYS, Calendar
 
-from . import gitops
+from . import courserepo, gitops
 from .cli import KNOWN_ERRORS, error, setup_console
 from .config import data_dir
 from .data import Course, YearData, load_year
-from .schedule import Change, ScheduleError, WorkdeskPart, build_part, effective_sessions, load_schedule
+from .schedule import Dates, ScheduleError, build_dates, read_changes, read_dates, sessions
 
 
 @dataclass(frozen=True)
@@ -38,33 +38,20 @@ def _is_class_or_makeup_day(cal: Calendar, d: date) -> bool:
     return cal.term_of(d) is not None and cal.weekday_of(d) in WEEKDAYS[:5]
 
 
-def check_course(course_id: str, cal: Calendar, computed: WorkdeskPart, current: WorkdeskPart,
-                 changes: list[Change]) -> list[Problem]:
+def check_course(course_id: str, cal: Calendar, expected: Dates, current: Dates) -> list[Problem]:
+    """(1) 配った日付が今の学事暦・moves から作り直したものと違う。(2) 日付が授業日でも補講日でもない。"""
     out = []
-    if not computed.same_content(current):
-        out.append(Problem(course_id, "stale", None, "配った schedule.yaml が今の学事暦・予定と違う。issue を走らせる"))
-    decided = {c.n for c in changes}
-    for e in computed.plan:
-        if e.facts and e.n not in decided:
-            out.append(Problem(course_id, "undecided", e.date,
-                               f"第 {e.n} 回（{_md(e.date)}）: {'、'.join(e.facts)} への対応が changes に無い"))
-    planned = {e.n: e.date for e in computed.plan}
-    for c in changes:
-        held = c.makeup if c.cancel else planned.get(c.n)
-        if held is not None and c.release is not None and c.release > held:
-            out.append(Problem(course_id, "prep_timing", c.release,
-                               f"第 {c.n} 回の公開日 {_md(c.release)} が授業日 {_md(held)} より後"))
-        if held is not None and c.prep_from is not None and c.prep_from >= held:
-            out.append(Problem(course_id, "prep_timing", c.prep_from,
-                               f"第 {c.n} 回の準備を始める日 {_md(c.prep_from)} が授業日 {_md(held)} より前でない"))
-        if c.makeup is None:
+    if not expected.same_content(current):
+        out.append(Problem(course_id, "stale", None, "配った schedule.yaml が今の学事暦・moves・予定と違う。issue を走らせる"))
+    for e in current.dates:
+        if e.date is None:
             continue
-        if cal.is_closed(c.makeup):
-            out.append(Problem(course_id, "closed_day", c.makeup,
-                               f"第 {c.n} 回の補講日 {_md(c.makeup)} は休講日・試験期間に当たる"))
-        elif not _is_class_or_makeup_day(cal, c.makeup):
-            out.append(Problem(course_id, "not_class_day", c.makeup,
-                               f"第 {c.n} 回の補講日 {_md(c.makeup)} は授業日でも補講日でもない"))
+        if cal.is_closed(e.date):
+            out.append(Problem(course_id, "closed_day", e.date,
+                               f"第 {e.n} 回の日 {_md(e.date)} は休講日・試験期間に当たる"))
+        elif not _is_class_or_makeup_day(cal, e.date):
+            out.append(Problem(course_id, "not_class_day", e.date,
+                               f"第 {e.n} 回の日 {_md(e.date)} は授業日でも補講日でもない"))
     return out
 
 
@@ -78,7 +65,7 @@ def check_calendar(cal: Calendar) -> list[Problem]:
             for d in cal.makeup_days if WEEKDAYS[d.weekday()] != cal.makeup_weekday]
 
 
-def check_research_days(course_id: str, prep_on: tuple[str, ...], changes: list[Change],
+def check_research_days(course_id: str, prep_on: tuple[str, ...], computed: Dates, current: Dates,
                         research_days: tuple[str, ...]) -> list[Problem]:
     """研究日はなるべく空けておきたい曜日なので、当たっていても soft で知らせるだけにする。"""
     out = []
@@ -86,28 +73,44 @@ def check_research_days(course_id: str, prep_on: tuple[str, ...], changes: list[
     if hit:
         out.append(Problem(course_id, "research_day", None,
                            f"準備の曜日（prep_on）に研究日 {', '.join(hit)} が入っている", soft=True))
-    for c in changes:
-        if c.makeup is not None and WEEKDAYS[c.makeup.weekday()] in research_days:
-            out.append(Problem(course_id, "research_day", c.makeup,
-                               f"第 {c.n} 回の補講日 {_md(c.makeup)} は研究日に当たる", soft=True))
+    planned = {e.n: e.date for e in computed.dates}
+    for e in current.dates:
+        if e.date is not None and e.date != planned.get(e.n) and WEEKDAYS[e.date.weekday()] in research_days:
+            out.append(Problem(course_id, "research_day", e.date,
+                               f"第 {e.n} 回を移した日 {_md(e.date)} は研究日に当たる", soft=True))
     return out
 
 
-def course_problems(yd: YearData, course: Course, ghq: Path) -> tuple[list[Problem], list[Change] | None]:
-    """一つの授業のぶつかりと、読めたなら今の changes。"""
+def course_problems(yd: YearData, course: Course, ghq: Path) -> list[Problem]:
+    """一つの授業のぶつかり。moves が学事暦の日程に合わないときは ScheduleError で止める。"""
     cal = yd.calendar_for(course)
-    path = ghq / course.repo / str(yd.year) / "schedule.yaml"
+    repo = ghq / course.repo
+    croot = courserepo.class_root(repo, course.class_id)
+    if croot is None:
+        where = f"classes/{course.class_id}/course.yaml" if course.class_id else "courses.yaml の class:"
+        return [Problem(course.id, "not_issued", None, f"class root が無い（{where}）")]
+    path = croot / "schedule.yaml"
     if not path.exists():
-        return [Problem(course.id, "not_issued", None, f"{path} がまだ無い")], None
+        return [Problem(course.id, "not_issued", None, f"{path} がまだ無い")]
+    computed = build_dates(course, cal, yd.events, [], "")
     try:
-        current, changes = load_schedule(path)
-        effective_sessions(current.plan, changes)
+        current = read_dates(path)
+        sessions(computed, current, [])
     except ScheduleError as e:
-        return [Problem(course.id, "bad_schedule", None, str(e))], None
-    computed = build_part(course, cal, yd.events, current.issued)
-    out = check_course(course.id, cal, computed, current, changes)
-    out += check_research_days(course.id, course.prep_on, changes, yd.research_days)
-    return out, changes
+        return [Problem(course.id, "bad_schedule", None, str(e))]
+    expected = build_dates(course, cal, yd.events, yd.moves, current.issued,
+                           course_id=courserepo.course_id(croot))
+    out = check_course(course.id, cal, expected, current)
+    out += check_research_days(course.id, course.prep_on, computed, current, yd.research_days)
+    try:
+        ss = sessions(computed, current, read_changes(croot / "schedule-changes.yaml"))
+    except ScheduleError as e:
+        return out + [Problem(course.id, "bad_changes", None, " ".join(str(e).split()))]
+    # (3) 上げた休講の相談が、まだ schedule.yaml に返ってきていない
+    out += [Problem(course.id, "pending_cancel", s.change.date,
+                    f"第 {s.n} 回（{_md(s.change.date)}）の休講が schedule.yaml にまだ返っていない")
+            for s in ss if s.pending]
+    return out
 
 
 def run_check(root: Path, year: int, ghq: Path) -> list[Problem]:
@@ -117,7 +120,7 @@ def run_check(root: Path, year: int, ghq: Path) -> list[Problem]:
         out += check_calendar(cal)
     for course in yd.courses:
         if course.repo is not None:
-            out += course_problems(yd, course, ghq)[0]
+            out += course_problems(yd, course, ghq)
     return out
 
 
