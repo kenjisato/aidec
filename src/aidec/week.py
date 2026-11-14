@@ -8,11 +8,18 @@ from pathlib import Path
 
 from classdays.calendar import WEEKDAYS
 
-from . import gitops, inbox
+from . import courserepo, gitops, inbox
 from .cli import KNOWN_ERRORS, error, setup_console
 from .config import data_dir
 from .data import Course, YearData, load_year
-from .schedule import ScheduleError, Session, build_part, effective_sessions, load_schedule
+from .schedule import ClassSession as Session
+from .schedule import ScheduleError, build_dates, read_changes, read_dates, sessions
+
+NOT_ISSUED = "（未配布）"
+BAD_SCHEDULE = "（schedule.yaml を読めない）"
+BAD_CHANGES = "（schedule-changes.yaml を読めない）"
+_TAGS = {NOT_ISSUED: " (not issued)", BAD_SCHEDULE: " (unreadable schedule.yaml)",
+         BAD_CHANGES: " (unreadable schedule-changes.yaml)", "": ""}
 
 _JP_WD = "月火水木金土日"
 
@@ -26,37 +33,51 @@ def _md_wd(d: date) -> str:
 
 
 def _sessions(yd: YearData, course: Course, ghq: Path) -> tuple[list[Session], str]:
-    path = ghq / course.repo / str(yd.year) / "schedule.yaml" if course.repo else None
+    """各回と印。class root の schedule.yaml・schedule-changes.yaml から作る。
+
+    schedule.yaml が無ければ学事暦と moves から作って「未配布」、読めなければ同じく作って印を付ける。
+    schedule-changes.yaml が読めなければ、それを入れずに作って印を付ける。
+    """
+    cal = yd.calendar_for(course)
+    computed = build_dates(course, cal, yd.events, [], "")
+    repo = ghq / course.repo if course.repo else None
+    croot = courserepo.class_root(repo, course.class_id) if repo else None
+    path = croot / "schedule.yaml" if croot else None
+    note = NOT_ISSUED
     if path is not None and path.exists():
         try:
-            part, changes = load_schedule(path)
-            return effective_sessions(part.plan, changes), ""
+            current = read_dates(path)
+            base = sessions(computed, current, [])
         except ScheduleError:
-            note = "（schedule.yaml を読めない）"
-    else:
-        note = "（未配布）"
-    part = build_part(course, yd.calendar_for(course), yd.events, "")
-    return effective_sessions(part.plan, []), note
+            note = BAD_SCHEDULE
+        else:
+            try:
+                return sessions(computed, current, read_changes(croot / "schedule-changes.yaml")), ""
+            except ScheduleError:
+                return base, BAD_CHANGES
+    return sessions(computed, build_dates(course, cal, yd.events, yd.moves, ""), []), note
+
+
+def _placed(s: Session) -> date | None:
+    """一覧に置く日。授業の日、無ければ休講は計算した日、未決の休講は取りやめる日。"""
+    if s.pending:
+        return s.change.date
+    return s.date or s.planned
 
 
 def prep_days(sessions: list[Session], prep_on: tuple[str, ...]) -> list[tuple[date, int]]:
     """準備を促す日（prep_on の曜日）と、準備する回の番号の組。
 
-    通常の回は前の週（授業日の 6 日前から前日まで。前の回の翌日より前には広げない）。
-    changes に prep_from がある回は、prep_from から授業日（release があればその前日）まで。
-    回は実際に行う日の順に並べ、補講未定の休講の回は数えない。通常の第 1 回の前は出さない。
+    授業日の 6 日前から前日まで（前の回の翌日より前には広げない）。回は授業の日の順に並べ、
+    日の無い回（休講・未決）は数えない。第 1 回の前は出さない。prep_from は見ない。
     """
-    held = sorted((s.date, s.n, s.change) for s in sessions if s.date is not None)
+    held = sorted((s.date, s.n) for s in sessions if s.date is not None)
     out = []
-    for i, (d1, n1, change) in enumerate(held):
-        if change is not None and change.prep_from is not None:
-            start, end = change.prep_from, change.release or d1
-        elif i == 0:
+    for i, (d1, n1) in enumerate(held):
+        if i == 0:
             continue
-        else:
-            start, end = max(held[i - 1][0] + timedelta(days=1), d1 - timedelta(days=6)), d1
-        d = start
-        while d < end:
+        d = max(held[i - 1][0] + timedelta(days=1), d1 - timedelta(days=6))
+        while d < d1:
             if WEEKDAYS[d.weekday()] in prep_on:
                 out.append((d, n1))
             d += timedelta(days=1)
@@ -78,19 +99,22 @@ def week_report(yd: YearData, ghq: Path, start: date, weeks: int) -> str:
         for course in yd.courses:
             ss, note = sessions[course.id]
             for s in ss:
-                if ws <= s.planned <= we:
-                    if s.cancelled:
-                        text = f"第 {s.n} 回 休講（補講 {_md(s.date)}）" if s.date else f"第 {s.n} 回 休講（補講未定）"
-                    else:
-                        text = f"第 {s.n} 回" + (f" {s.mode}" if s.mode else "")
-                    if s.facts:
-                        text += " ／ " + "、".join(s.facts)
-                    items.append((s.planned, 0, f"{_md_wd(s.planned)} {course.id} {text}{note}"))
-                if s.cancelled and s.date and ws <= s.date <= we:
-                    items.append((s.date, 0, f"{_md_wd(s.date)} {course.id} 第 {s.n} 回 補講"))
-                release = s.change.release if s.change else None
-                if release and ws <= release <= we:
-                    items.append((release, 0, f"{_md_wd(release)} {course.id} 第 {s.n} 回 公開"))
+                d = _placed(s)
+                if d is None or not ws <= d <= we:
+                    continue
+                if s.pending:
+                    text = f"第 {s.n} 回 休講（未決）"
+                elif s.cancelled:
+                    text = f"第 {s.n} 回 休講"
+                elif s.date is None:
+                    text = f"第 {s.n} 回 日付なし"
+                else:
+                    text = f"第 {s.n} 回" + (f" {s.mode}" if s.mode else "")
+                    if s.change and s.change.prep_from and s.mode == "ondemand":
+                        text += f"（prep_from {_md(s.change.prep_from)}）"
+                if s.notes:
+                    text += " ／ " + "、".join(s.notes)
+                items.append((d, 0, f"{_md_wd(d)} {course.id} {text}{note}"))
             for d, n in prep_days(ss, course.prep_on):
                 if ws <= d <= we:
                     items.append((d, 4, f"{_md_wd(d)} {course.id} 第 {n} 回の準備"))
@@ -131,18 +155,23 @@ def _day_entries(yd: YearData, ghq: Path, first: date,
 
     for course in yd.courses:
         ss, note = _sessions(yd, course, ghq)
-        tag = " (not issued)" if note == "（未配布）" else (" (unreadable schedule.yaml)" if note else "")
+        tag = _TAGS[note]
         for s in ss:
-            if s.cancelled:
-                text = f"Day {s.n} cancelled → makeup {_md(s.date)}" if s.date else f"Day {s.n} cancelled (makeup TBD)"
+            if s.pending:
+                text = f"Day {s.n} cancel pending"
+            elif s.cancelled:
+                text = f"Day {s.n} cancelled"
+            elif s.date is None:
+                text = f"Day {s.n} no date"
             else:
                 text = f"Day {s.n}" + (f" ({s.mode})" if s.mode else "")
-            text += tag + "".join(f" · {f}" for f in s.facts)
-            add(s.planned, 0, course.name, text)
-            if s.cancelled and s.date:
-                add(s.date, 0, course.name, f"Day {s.n} makeup")
-            if s.change and s.change.release:
-                add(s.change.release, 0, course.name, f"Day {s.n} release")
+            text += tag
+            if s.date and s.change and s.change.prep_from and s.mode == "ondemand":
+                text += f" · prep_from {_md(s.change.prep_from)}"
+            text += "".join(f" · {f}" for f in s.notes)
+            d = _placed(s)
+            if d is not None:
+                add(d, 0, course.name, text)
         for d, n in prep_days(ss, course.prep_on):
             add(d, 1, course.name, f"Prep for Day {n}")
     for e in yd.events:

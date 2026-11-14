@@ -116,3 +116,36 @@ def no_real_sr(monkeypatch):
     """テストが手元の sr（通信する）を呼ばないように。"""
     from aidec import repos
     monkeypatch.setattr(repos, "SR", "aidec-test-no-such-sr")
+
+
+# 授業の id -> (IK の course.id, class id)
+CLASSES = {"macro-mon": ("macro-2027", "2027-mon3"), "seminar-wed": ("seminar-2027", "2027-wed2")}
+
+
+def add_class(year_dir, ghq, name):
+    """courses.yaml の授業 name に class: を付け、授業レポに classes/<id>/course.yaml を置く。class root を返す。"""
+    cid, cls = CLASSES[name]
+    p = year_dir / "courses.yaml"
+    text = p.read_text(encoding="utf-8")
+    write(p, text.replace(f"repo: github.com/example/{name}\n", f"repo: github.com/example/{name}\n  class: {cls}\n")
+          .replace(f"repo: github.com/example/{name},", f"repo: github.com/example/{name}, class: {cls},"))
+    croot = ghq / "github.com" / "example" / name / "classes" / cls
+    write(croot / "course.yaml", f"course:\n  id: {cid}\nclasses:\n  - id: {cls}\n    destinations: [{{to: manual}}]\n")
+    return croot
+
+
+def issue_schedule(year_dir, ghq, name, edit=None):
+    """今の学事暦・moves どおりの schedule.yaml を class root に置く。edit で本文を書き換えられる。"""
+    from aidec import courserepo
+    from aidec.data import load_year
+    from aidec.schedule import build_dates, write_dates
+    croot = add_class(year_dir, ghq, name) if not (ghq / "github.com" / "example" / name / "classes").is_dir() \
+        else ghq / "github.com" / "example" / name / "classes" / CLASSES[name][1]
+    yd = load_year(year_dir)
+    (course,) = [c for c in yd.courses if c.id == name]
+    path = croot / "schedule.yaml"
+    write_dates(path, build_dates(course, yd.calendar_for(course), yd.events, yd.moves,
+                                  "2027-09-01 (abc1234)", course_id=courserepo.course_id(croot)))
+    if edit is not None:
+        write(path, edit(path.read_text(encoding="utf-8")))
+    return croot

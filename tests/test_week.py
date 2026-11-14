@@ -2,37 +2,92 @@ import os
 import subprocess
 from datetime import date
 
-from conftest import write
+from conftest import add_class, issue_schedule, write
 from aidec.data import load_year
-from aidec.schedule import build_part, write_part
 from aidec.week import day_table, prep_days, week_report
+
+MON_SCHED = ("github.com", "example", "macro-mon")
+
+
+def changes(croot, *lines):
+    write(croot / "schedule-changes.yaml",
+          "course: macro-2027\nclass: 2027-mon3\nchanges:\n" + "".join(f"  - {x}\n" for x in lines))
 
 
 def test_week_report(year_dir, ghq):
-    yd = load_year(year_dir)
-    mon = yd.courses[0]
-    p = ghq / mon.repo / "2027" / "schedule.yaml"
-    write_part(p, build_part(mon, yd.calendar_for(mon), yd.events, "x"))
-    write(p, p.read_text(encoding="utf-8").replace(
-        "changes: []\n", "changes:\n  - {n: 4, mode: zoom}\n  - {n: 5, cancel: true, makeup: 2027-10-23}\n"))
-    out = week_report(yd, ghq, date(2027, 10, 20), 2)
+    # macro-mon は新しい置き方で配ってある（第 5 回を 10/23 の補講日に移した）。seminar-wed は classes/ が無い
+    croot = issue_schedule(year_dir, ghq, "macro-mon",
+                           lambda t: t.replace("{n: 5, date: 2027-10-25}", "{n: 5, date: 2027-10-23}"))
+    changes(croot, "{n: 4, reason: 出張, mode: online}")
+    out = week_report(load_year(year_dir), ghq, date(2027, 10, 20), 2)
     assert out.splitlines() == [
         "## 2027-10-18 の週（10/18〜10/24）",
-        "- 10/18（月） macro-mon 第 4 回 zoom ／ 学会（○○）（10/18〜10/20）",
+        "- 10/18（月） macro-mon 第 4 回 online ／ 学会（○○）（10/18〜10/20）",
         "- 10/18〜10/20 学会（○○）",
         "- 10/20（水） seminar-wed 第 4 回 ／ 学会（○○）（10/18〜10/20）（未配布）",
-        "- 10/23（土） macro-mon 第 5 回 補講",
+        "- 10/23（土） macro-mon 第 5 回",
         "",
         "## 2027-10-25 の週（10/25〜10/31）",
-        "- 10/25（月） macro-mon 第 5 回 休講（補講 10/23）",
         "- 10/27（水） seminar-wed 第 5 回（未配布）",
     ]
 
 
-def _session(n, planned, actual=None, cancelled=False, prep_from=None, release=None):
-    from aidec.schedule import Change, Session
-    change = Change(n, prep_from=prep_from, release=release) if prep_from or release else None
-    return Session(n, planned, planned if actual is None and not cancelled else actual, None, cancelled, (), change)
+def _mon_week(year_dir, ghq, start=date(2027, 10, 25)):
+    return [ln for ln in week_report(load_year(year_dir), ghq, start, 1).splitlines() if "macro-mon" in ln]
+
+
+def test_cancelled_session_is_shown_as_cancelled(year_dir, ghq):
+    issue_schedule(year_dir, ghq, "macro-mon",
+                   lambda t: t.replace("{n: 5, date: 2027-10-25}", "{n: 5, cancelled: true}"))
+    assert _mon_week(year_dir, ghq) == ["- 10/25（月） macro-mon 第 5 回 休講"]
+
+
+def test_pending_cancel_is_marked_on_its_date(year_dir, ghq):
+    croot = issue_schedule(year_dir, ghq, "macro-mon")
+    changes(croot, "{n: 5, reason: 病気, cancel: true, date: 2027-10-25, ref: r1}")
+    assert _mon_week(year_dir, ghq) == ["- 10/25（月） macro-mon 第 5 回 休講（未決）"]
+
+
+def test_ondemand_is_on_release_and_prep_from_is_only_shown(year_dir, ghq):
+    croot = issue_schedule(year_dir, ghq, "macro-mon")
+    changes(croot, "{n: 15, reason: 出張, mode: ondemand, release: 2028-01-05, prep_from: 2027-12-21}")
+    out = week_report(load_year(year_dir), ghq, date(2028, 1, 3), 2)
+    assert "- 1/5（水） macro-mon 第 15 回 ondemand（prep_from 12/21）" in out
+    assert "1/10（月） macro-mon" not in out
+
+
+def test_broken_changes_file_is_marked(year_dir, ghq):
+    croot = issue_schedule(year_dir, ghq, "macro-mon")
+    write(croot / "schedule-changes.yaml", "changes: [\n")
+    assert _mon_week(year_dir, ghq) == ["- 10/25（月） macro-mon 第 5 回（schedule-changes.yaml を読めない）"]
+    changes(croot, "{n: 99, reason: x, mode: online}")          # dates に無い回
+    assert _mon_week(year_dir, ghq) == ["- 10/25（月） macro-mon 第 5 回（schedule-changes.yaml を読めない）"]
+
+
+def test_broken_schedule_is_marked(year_dir, ghq):
+    croot = issue_schedule(year_dir, ghq, "macro-mon")
+    write(croot / "schedule.yaml", "dates: [\n")
+    assert _mon_week(year_dir, ghq) == ["- 10/25（月） macro-mon 第 5 回（schedule.yaml を読めない）"]
+
+
+def test_not_issued_uses_moves(year_dir, ghq):
+    write(year_dir / "moves.yaml", "- {course: macro-mon, n: 5, cancelled: true}\n")
+    add_class(year_dir, ghq, "macro-mon")                         # class root はあるが schedule.yaml が無い
+    assert _mon_week(year_dir, ghq) == ["- 10/25（月） macro-mon 第 5 回 休講（未配布）"]
+
+
+def test_old_layout_schedule_is_not_read(year_dir, ghq):
+    # classes/ に移っていないレポの <年度>/schedule.yaml は見ない
+    old = write(ghq.joinpath(*MON_SCHED) / "2027" / "schedule.yaml",
+                "course: macro-mon\nissued: x\nplan:\n  - {n: 5, date: 2027-10-26}\nchanges: []\n")
+    before = old.read_text(encoding="utf-8")
+    assert _mon_week(year_dir, ghq) == ["- 10/25（月） macro-mon 第 5 回（未配布）"]
+    assert old.read_text(encoding="utf-8") == before
+
+
+def _session(n, d, cancelled=False):
+    from aidec.schedule import ClassSession
+    return ClassSession(n, d, None if cancelled else d, None, cancelled, (), None)
 
 
 def test_prep_days_are_in_the_week_before():
@@ -42,21 +97,13 @@ def test_prep_days_are_in_the_week_before():
     assert got == [(date(2027, 12, 21), 14), (date(2028, 1, 4), 15), (date(2028, 1, 5), 15)]
 
 
-def test_prep_days_follow_actual_dates():
-    # 第 2 回を休講にして 10/23（土）に補講する。第 4 回は休講で補講未定
-    ss = [_session(1, date(2027, 9, 27)), _session(2, date(2027, 10, 4), date(2027, 10, 23), True),
+def test_prep_days_follow_class_dates():
+    # 第 2 回は 10/23（土）に移した。第 4 回は休講
+    ss = [_session(1, date(2027, 9, 27)), _session(2, date(2027, 10, 23)),
           _session(3, date(2027, 10, 11)), _session(4, date(2027, 10, 18), cancelled=True)]
-    # 9/27 の次は 10/11 の第 3 回、その次は 10/23 の第 2 回（補講）。補講未定の第 4 回は数えない
+    # 9/27 の次は 10/11 の第 3 回、その次は 10/23 の第 2 回。休講の第 4 回は数えない
     assert prep_days(ss, ("tue",)) == [(date(2027, 10, 5), 3), (date(2027, 10, 19), 2)]
     assert prep_days(ss, ("sat",)) == [(date(2027, 10, 9), 3)]          # 10/17〜10/22 に土曜は無い
-
-
-def test_prep_from_starts_early_and_release_ends_it():
-    ss = [_session(13, date(2027, 12, 20)), _session(14, date(2027, 12, 22)),
-          _session(15, date(2028, 1, 10), prep_from=date(2027, 12, 21), release=date(2028, 1, 5))]
-    got = prep_days(ss, ("tue", "wed"))
-    assert got == [(date(2027, 12, 21), 14), (date(2027, 12, 21), 15), (date(2027, 12, 22), 15),
-                   (date(2027, 12, 28), 15), (date(2027, 12, 29), 15), (date(2028, 1, 4), 15)]
 
 
 def test_week_report_shows_prep_days(year_dir, ghq):
@@ -66,17 +113,6 @@ def test_week_report_shows_prep_days(year_dir, ghq):
     out = week_report(load_year(year_dir), ghq, date(2027, 10, 4), 1)
     assert "- 10/5（火） macro-mon 第 3 回の準備" in out
     assert "- 10/6（水） macro-mon 第 3 回の準備" in out
-
-
-def test_week_report_shows_release(year_dir, ghq):
-    yd = load_year(year_dir)
-    mon = yd.courses[0]
-    p = ghq / mon.repo / "2027" / "schedule.yaml"
-    write_part(p, build_part(mon, yd.calendar_for(mon), yd.events, "x"))
-    write(p, p.read_text(encoding="utf-8").replace(
-        "changes: []\n", "changes:\n  - {n: 15, mode: ondemand, prep_from: 2027-12-21, release: 2028-01-05}\n"))
-    out = week_report(yd, ghq, date(2028, 1, 3), 1)
-    assert "- 1/5（水） macro-mon 第 15 回 公開" in out
 
 
 def test_prep_and_deadline(year_dir, ghq):
@@ -130,17 +166,22 @@ def test_day_table_lists_every_day_with_aligned_columns(year_dir, ghq):
 
 
 def test_day_table_shows_changes_and_busy(year_dir, ghq):
+    croot = issue_schedule(year_dir, ghq, "macro-mon",
+                           lambda t: t.replace("{n: 15, date: 2028-01-10}", "{n: 15, date: 2028-01-08}"))
+    changes(croot, "{n: 16, reason: x, mode: ondemand, release: 2028-01-14, prep_from: 2028-01-09}",
+            "{n: 13, reason: x, cancel: true, date: 2027-12-20}")
     yd = load_year(year_dir)
-    mon = yd.courses[0]
-    p = ghq / mon.repo / "2027" / "schedule.yaml"
-    write_part(p, build_part(mon, yd.calendar_for(mon), yd.events, "x"))
-    write(p, p.read_text(encoding="utf-8").replace(
-        "changes: []\n", "changes:\n  - {n: 15, cancel: true, makeup: 2028-01-08}\n"
-                         "  - {n: 16, mode: ondemand, release: 2028-01-14}\n"))
-    out = day_table(yd, ghq, date(2028, 1, 7), 4)
-    assert "01-07 Fri | busy" in out                                   # 卒論提出の前 2 週
-    assert "01-08 Sat | macro-mon | Day 15 makeup" in out
-    assert "01-10 Mon | macro-mon | Day 15 cancelled → makeup 1/8" in out
+    out = [" ".join(ln.split()) for ln in day_table(yd, ghq, date(2028, 1, 7), 8).splitlines()]
+    assert "01-07 Fri | busy | before 卒論提出 (1/10)" in out           # 卒論提出の前 2 週
+    assert "01-08 Sat | macro-mon | Day 15" in out
+    assert not any(ln.startswith("01-10 Mon | macro-mon") for ln in out)
+    assert "01-14 Fri | macro-mon | Day 16 (ondemand) · prep_from 1/9" in out
+    assert "12-20 Mon | macro-mon | Day 13 cancel pending" in day_table(yd, ghq, date(2027, 12, 20), 1)
+    issue_schedule(year_dir, ghq, "macro-mon",
+                   lambda t: t.replace("{n: 13, date: 2027-12-20}", "{n: 13, cancelled: true}"))
+    write(croot / "schedule-changes.yaml", "changes: [\n")
+    assert day_table(load_year(year_dir), ghq, date(2027, 12, 20), 1).splitlines() == [
+        "12-20 Mon | macro-mon | Day 13 cancelled (unreadable schedule-changes.yaml)"]
 
 
 def test_table_from_the_command_line(year_dir, ghq, capsys):

@@ -16,37 +16,42 @@ PREP_DAYS = 21
 FOOTER = "授業レポは未 fetch"
 
 
-def _title(ydir: Path, dirname: str | None) -> str | None:
+def _title(cdir: Path, dirname: str | None) -> str | None:
     if dirname is None:
         return None
     try:
-        doc = yamlio.load(ydir / dirname / "session.yaml")
+        doc = yamlio.load(cdir / dirname / "session.yaml")
         title = ((doc or {}).get("session") or {}).get("title")
     except (yamlio.YamlError, AttributeError, OSError):
         return None
     return str(title) if title else None
 
 
-def _accepted(repo: Path, year: int, base: str, dirname: str | None) -> bool:
+def _accepted(repo: Path, cdir: Path, base: str, dirname: str | None) -> bool:
     """base の枝の review.md に Accepted: で始まる行があるか。fetch はしない。"""
     if dirname is None:
         return False
+    rel = (cdir / dirname / "review.md").relative_to(repo).as_posix()
     try:
-        text = gitops.git(repo, "show", f"{base}:{year}/{dirname}/review.md")
+        text = gitops.git(repo, "show", f"{base}:{rel}")
     except gitops.GitError:
         return False
     return any(line.startswith("Accepted:") for line in text.splitlines())
+
+
+def _class_dir(yd: YearData, c: Course, ghq: Path) -> Path | None:
+    return courserepo.class_dir(ghq / c.repo, yd.year, c.class_id) if c.repo else None
 
 
 def _todays_sessions(yd: YearData, ghq: Path, day: date) -> list[str]:
     lines = []
     for c in yd.courses:
         ss, _ = _sessions(yd, c, ghq)
-        ydir = ghq / c.repo / str(yd.year) if c.repo else None
-        pattern = courserepo.layout(ydir)[0] if ydir else "{nn}"
+        cdir = _class_dir(yd, c, ghq)
+        pattern = courserepo.layout(cdir)[0] if cdir else "{nn}"
         for s in ss:
             if s.date == day:
-                title = _title(ydir, courserepo.session_dir(pattern, s.n)) if ydir else None
+                title = _title(cdir, courserepo.session_dir(pattern, s.n)) if cdir else None
                 lines.append(f"- {c.name}・第 {s.n} 回" + (f"・{title}" if title else ""))
     return lines
 
@@ -71,8 +76,8 @@ def _candidates(yd: YearData, c: Course, ghq: Path, day: date) -> tuple[list[tup
     team.yaml に base があれば受け入れで、無ければ prep_on で決める。
     """
     ss, _ = _sessions(yd, c, ghq)
-    ydir = ghq / c.repo / str(yd.year) if c.repo else None
-    doc = courserepo.team(ghq / c.repo, ydir) if ydir else {}
+    cdir = _class_dir(yd, c, ghq)
+    doc = courserepo.team(ghq / c.repo, cdir) if cdir else {}
     base = courserepo.base_branch(doc)
     if base is None:
         held = {s.n: s.date for s in ss if s.date is not None}
@@ -82,11 +87,11 @@ def _candidates(yd: YearData, c: Course, ghq: Path, day: date) -> tuple[list[tup
         gitops.git(repo, "rev-parse", "--verify", "-q", f"{base}^{{commit}}")
     except gitops.GitError:
         return [], f"- {c.name}: {base} 読めない"
-    pattern = courserepo.layout(ydir, doc)[0]
+    pattern = courserepo.layout(cdir, doc)[0]
     end = day + timedelta(days=PREP_DAYS)
     return sorted((s.date, s.n) for s in ss
                   if s.date is not None and day <= s.date <= end
-                  and not _accepted(repo, yd.year, base, courserepo.session_dir(pattern, s.n))), None
+                  and not _accepted(repo, cdir, base, courserepo.session_dir(pattern, s.n))), None
 
 
 def _prep_candidates(yd: YearData, ghq: Path, day: date) -> list[str]:
