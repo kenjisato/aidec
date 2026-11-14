@@ -23,8 +23,12 @@ description: Use when the user tells a schedule item or request by mouth, in the
 
 授業から上がってきた相談（`inbox/<ref>.md`）が決まったら、`inbox/done/<ref>.md` に移してコミットする（確認してから）。`inbox/done/` は一覧に出ない。
 
+休講・補講・日付の移動が決まったら、`<data_dir>/<年度>/moves.yaml` に 1 行足し（見せてから）、`aidec issue <年度> --course <id>` で配る。
+`- {course: <id>, n: 7, date: YYYY-MM-DD, ref: <ref>}`（移す）か `- {course: <id>, n: 7, cancelled: true, ref: <ref>}`（補講しない）。`notes` は任意。
+`aidec issue` は授業レポの作業ツリーに `schedule.yaml` を書くだけで、コミットは授業の側（director）がする。そのことを利用者に一言伝える。
+
 ## 手順
 
 1. 種類を決め、足す行（または task-manage に渡す内容）を利用者に見せて、OK をもらってから書く。曖昧な日付や題は推測せず聞く
 2. `events.yaml` に書いたら、データのレポでコミットする
-3. 授業に当たりそうなら `aidec week <年度> --table --days <日数>` で、どの授業のどの回かを示し、`aidec issue` がその回の事実として載せることを伝える。その回をどう行うか（休講、補講、オンラインなど）は授業の側で決める。ここでは決めない
+3. 授業に当たりそうなら `aidec week <年度> --table --days <日数>` で、どの授業のどの回かを示し、`aidec issue` がその回の事実として載せることを伝える。オンライン・オンデマンドは授業の側で決める。休講・補講・移動は授業から相談が上がってから決める（上の「上がってきた相談を閉じる」）。ここでは先に決めない

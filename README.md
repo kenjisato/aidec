@@ -26,6 +26,16 @@ uv run aidec brief 2027            # 今日の授業・締め切り・相談・�
 uv run aidec supervise             # instructor-kit の上位コマンド（通常は直接呼ばない）
 ```
 
+## 授業の日程
+
+`aidec issue` は instructor-kit の授業レポの `classes/<class id>/schedule.yaml` を書く（コミットはしない）。`classes/` に移っていない授業レポは飛ばす。
+`week`・`brief`・`check` は `schedule.yaml` と、授業の側が書く `schedule-changes.yaml` を読む。
+
+データのレポでは:
+
+- `<年度>/courses.yaml` の各授業に `class: <class id>`（授業レポの `classes/` の下の名前）
+- `<年度>/moves.yaml`: 決まった休講・補講・移動。`- {course, n, date}` か `- {course, n, cancelled: true}`、`notes`・`ref` は任意
+
 ## 導入
 
 ```
