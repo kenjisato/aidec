@@ -4,7 +4,7 @@ import pytest
 
 from classdays.plan import Slot
 from conftest import write
-from aidec.data import DataError, load_year
+from aidec.data import DataError, Move, load_moves, load_year
 
 
 def test_load_year(year_dir):
@@ -115,4 +115,45 @@ def test_bad_prep_settings(year_dir, courses, settings, message):
 def test_impossible_event_date_names_the_file(year_dir):
     write(year_dir / "events.yaml", "- {date: 2027-11-31, kind: trip, title: t}\n")
     with pytest.raises(DataError, match="events.yaml"):
+        load_year(year_dir)
+
+
+def test_course_class_id(year_dir):
+    write(year_dir / "courses.yaml",
+          "- {id: x, class: 2027-fall-mon3, calendar: univa, term: fall, slot: mon-1, sessions: 15}\n"
+          "- {id: y, calendar: univa, term: fall, slot: tue-1, sessions: 15}\n")
+    yd = load_year(year_dir)
+    assert yd.courses[0].class_id == "2027-fall-mon3"
+    assert yd.courses[1].class_id is None
+
+
+def test_moves_file_is_optional(year_dir):
+    assert load_year(year_dir).moves == []
+    assert load_moves(year_dir) == []
+
+
+def test_load_moves(year_dir):
+    write(year_dir / "moves.yaml",
+          "- {course: macro-mon, n: 3, date: 2027-10-30, notes: [補講日に移す], ref: inbox/a}\n"
+          "- {course: macro-mon, n: 4, cancelled: true}\n")
+    moved, cancelled = load_year(year_dir).moves
+    assert moved == Move("macro-mon", 3, date(2027, 10, 30), False, ("補講日に移す",), "inbox/a")
+    assert cancelled == Move("macro-mon", 4, None, True, (), None)
+
+
+@pytest.mark.parametrize("text, message", [
+    ("- {course: macro-mon, n: 3, date: 2027-10-30, cancelled: true}", "date と cancelled"),
+    ("- {course: macro-mon, n: 3}", "date か cancelled"),
+    ("- {course: macro-mon, n: 3, cancelled: false}", "date か cancelled"),
+    ("- {course: nope, n: 3, cancelled: true}", "授業 nope が無い"),
+    ("- {course: macro-mon, n: 0, cancelled: true}", "1..16"),
+    ("- {course: macro-mon, n: 17, cancelled: true}", "1..16"),
+    ("- {course: macro-mon, n: 3, cancelled: true}\n- {course: macro-mon, n: 3, date: 2027-10-30}",
+     "macro-mon の第 3 回が二つある"),
+    ("- {course: macro-mon, n: 3, date: 2027-10-30, room: A}", "room"),
+    ("- {course: macro-mon, n: 3, date: 2027/10/30}", "日付として読めない"),
+])
+def test_bad_moves(year_dir, text, message):
+    write(year_dir / "moves.yaml", text + "\n")
+    with pytest.raises(DataError, match=f"moves.yaml.*{message}"):
         load_year(year_dir)

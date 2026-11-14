@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
@@ -11,7 +11,8 @@ from classdays.plan import PlanError, Slot, parse_slot
 
 from . import yamlio
 
-_COURSE_KEYS = {"id", "repo", "calendar", "term", "slot", "sessions", "prep_on", "label"}
+_COURSE_KEYS = {"id", "repo", "calendar", "term", "slot", "sessions", "prep_on", "label", "class"}
+_MOVE_KEYS = {"course", "n", "date", "cancelled", "notes", "ref"}
 _SETTINGS_KEYS = {"research_days"}
 _EVENT_KEYS = {"date", "end", "kind", "title", "prep", "note"}
 
@@ -30,6 +31,7 @@ class Course:
     sessions: int
     prep_on: tuple[str, ...] = ()      # 次の回の準備をする曜日
     label: str | None = None           # 表に出す短い名前。無ければ id
+    class_id: str | None = None        # 授業レポの classes/<id>/（IK の class id）
 
     @property
     def name(self) -> str:
@@ -56,6 +58,17 @@ class Event:
 
 
 @dataclass(frozen=True)
+class Move:
+    """授業の 1 回を、学事暦が示す日から動かす（日付に移す、または休講）。"""
+    course: str
+    n: int
+    date: date | None
+    cancelled: bool
+    notes: tuple[str, ...] = ()
+    ref: str | None = None             # inbox の ref
+
+
+@dataclass(frozen=True)
 class YearData:
     year: int
     dir: Path
@@ -63,6 +76,7 @@ class YearData:
     courses: list[Course]
     events: list[Event]
     research_days: tuple[str, ...] = ()   # なるべく空けておきたい曜日
+    moves: list[Move] = field(default_factory=list)
 
     def calendar_for(self, course: Course) -> Calendar:
         return self.calendars[course.calendar]
@@ -146,7 +160,8 @@ def _load_courses(path: Path, calendars: dict[str, Calendar]) -> list[Course]:
         out.append(Course(cid, None if repo is None else str(repo), str(c["calendar"]),
                           str(c["term"]), slot, int(c["sessions"]),
                           _weekdays(c.get("prep_on"), f"{where}.prep_on"),
-                          None if c.get("label") is None else str(c["label"])))
+                          None if c.get("label") is None else str(c["label"]),
+                          None if c.get("class") is None else str(c["class"])))
     return out
 
 
@@ -185,16 +200,65 @@ def _load_events(path: Path) -> list[Event]:
     return out
 
 
+def load_moves(year_dir: Path, courses: list[Course] | None = None) -> list[Move]:
+    """moves.yaml を読む。courses があれば授業の id と回の範囲も確かめる。"""
+    path = year_dir / "moves.yaml"
+    if not path.exists():
+        return []
+    raw = _load(path) or []
+    if not isinstance(raw, list):
+        raise DataError(f"{path.name}: 動かす回の列で書く")
+    by_id = None if courses is None else {c.id: c for c in courses}
+    out: list[Move] = []
+    seen: set[tuple[str, int]] = set()
+    for i, m in enumerate(raw):
+        where = f"{path.name}[{i}]"
+        if not isinstance(m, dict):
+            raise DataError(f"{where}: 対応づけで書く")
+        unknown = set(m) - _MOVE_KEYS
+        if unknown:
+            raise DataError(f"{where}: 知らない欄 {', '.join(sorted(unknown))}")
+        for k in ("course", "n"):
+            if k not in m:
+                raise DataError(f"{where}: {k} が無い")
+        cid, n = str(m["course"]), m["n"]
+        if isinstance(n, bool) or not isinstance(n, int):
+            raise DataError(f"{where}.n: 整数で書く: {n!r}")
+        d, cancelled = m.get("date"), m.get("cancelled") is True
+        if d is not None and not isinstance(d, date):
+            raise DataError(f"{where}.date: 日付として読めない: {d!r}（YYYY-MM-DD で書く）")
+        if d is not None and cancelled:
+            raise DataError(f"{where}: date と cancelled は同時に書けない")
+        if d is None and not cancelled:
+            raise DataError(f"{where}: date か cancelled: true のどちらかを書く")
+        if by_id is not None:
+            if cid not in by_id:
+                raise DataError(f"{where}: 授業 {cid} が無い（courses.yaml）")
+            if not 1 <= n <= by_id[cid].sessions:
+                raise DataError(f"{where}: n は 1..{by_id[cid].sessions} の範囲で書く: {n}")
+        if (cid, n) in seen:
+            raise DataError(f"{path.name}: {cid} の第 {n} 回が二つある")
+        seen.add((cid, n))
+        notes = m.get("notes") or []
+        if not isinstance(notes, list):
+            raise DataError(f"{where}.notes: 文字列の列で書く")
+        out.append(Move(cid, n, d, cancelled, tuple(str(x) for x in notes),
+                        None if m.get("ref") is None else str(m["ref"])))
+    return out
+
+
 def load_year(year_dir: Path) -> YearData:
     calendars = _load_calendars(year_dir)
     courses_path = year_dir / "courses.yaml"
     if not courses_path.exists():
         raise DataError(f"{courses_path} が無い")
+    courses = _load_courses(courses_path, calendars)
     return YearData(
         year=int(year_dir.name),
         dir=year_dir,
         calendars=calendars,
-        courses=_load_courses(courses_path, calendars),
+        courses=courses,
         events=_load_events(year_dir / "events.yaml"),
         research_days=_load_settings(year_dir / "settings.yaml"),
+        moves=load_moves(year_dir, courses),
     )
