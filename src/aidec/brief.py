@@ -72,7 +72,7 @@ def _candidates(yd: YearData, c: Course, ghq: Path, day: date) -> tuple[list[tup
     """
     ss, _ = _sessions(yd, c, ghq)
     ydir = ghq / c.repo / str(yd.year) if c.repo else None
-    doc = courserepo.team(ydir) if ydir else {}
+    doc = courserepo.team(ghq / c.repo, ydir) if ydir else {}
     base = courserepo.base_branch(doc)
     if base is None:
         held = {s.n: s.date for s in ss if s.date is not None}
