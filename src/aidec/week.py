@@ -17,8 +17,10 @@ from .schedule import ScheduleError, Session, build_dates, read_changes, read_da
 NOT_ISSUED = "（未配布）"
 BAD_SCHEDULE = "（schedule.yaml を読めない）"
 BAD_CHANGES = "（schedule-changes.yaml を読めない）"
+BAD_MOVES = "（moves.yaml が合わない）"
+PENDING = "休講（未決）"
 _TAGS = {NOT_ISSUED: " (not issued)", BAD_SCHEDULE: " (unreadable schedule.yaml)",
-         BAD_CHANGES: " (unreadable schedule-changes.yaml)", "": ""}
+         BAD_CHANGES: " (unreadable schedule-changes.yaml)", BAD_MOVES: " (moves.yaml mismatch)", "": ""}
 
 _JP_WD = "月火水木金土日"
 
@@ -54,7 +56,11 @@ def _sessions(yd: YearData, course: Course, ghq: Path) -> tuple[list[Session], s
                 return sessions(computed, current, read_changes(croot / "schedule-changes.yaml")), ""
             except ScheduleError:
                 return base, BAD_CHANGES
-    return sessions(computed, build_dates(course, cal, yd.events, yd.moves, ""), []), note
+    try:
+        fallback = build_dates(course, cal, yd.events, yd.moves, "")
+    except ScheduleError:          # moves が学事暦の日程に合わない。この授業だけ印を付けて続ける
+        return sessions(computed, computed, []), BAD_MOVES
+    return sessions(computed, fallback, []), note
 
 
 def _placed(s: Session) -> date | None:
@@ -102,7 +108,7 @@ def week_report(yd: YearData, ghq: Path, start: date, weeks: int) -> str:
                 if d is None or not ws <= d <= we:
                     continue
                 if s.pending:
-                    text = f"第 {s.n} 回 休講（未決）"
+                    text = f"第 {s.n} 回 {PENDING}"
                 elif s.cancelled:
                     text = f"第 {s.n} 回 休講"
                 elif s.date is None:

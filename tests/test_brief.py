@@ -101,9 +101,9 @@ def test_deadline_window_is_14_days(desk):
     assert not any("学会" in i for i in items)     # 終わっている
 
 
-def _accept(repo, branch, dirname, text="Accepted: 2027-10-10 山田太郎\n", on_branch=True):
+def _accept(repo, branch, dirname, text="Accepted: 2027-10-10 山田太郎\n", on_branch=True, cdir=MON_CLASS):
     run_git(repo, "checkout", "-q", "-b", branch)
-    write(repo / MON_CLASS / dirname / "review.md", text)
+    write(repo / cdir / dirname / "review.md", text)
     run_git(repo, "add", "-A")
     run_git(repo, "commit", "-q", "-m", "review")
     run_git(repo, "checkout", "-q", "main")
@@ -123,6 +123,24 @@ def test_accepted_sessions_are_not_candidates_even_only_on_base(desk, ghq):
     # 近い順
     days = [c for c in cands if "マクロ月" in c]
     assert days == sorted(days, key=lambda c: int(c.split("第 ")[1].split(" ")[0]))
+
+
+def test_acceptance_in_a_repo_not_moved_to_classes(desk, ghq):
+    repo = ghq / SEM
+    write(repo / "2027" / "team.yaml", "sessions: {base: develop}\n")
+    run_git(repo, "add", "-A")
+    run_git(repo, "commit", "-q", "-m", "team")
+    _accept(repo, "develop", "05", cdir="2027")
+    cands = section(run(desk, "--date", "2027-10-18"), "準備の候補")
+    assert "- seminar-wed 第 4 回（10/20（水））" in cands
+    assert not any("seminar-wed 第 5 回" in c for c in cands)
+
+
+def test_pending_cancel_is_shown_on_its_day(desk, ghq, year_dir):
+    croot = issue_schedule(year_dir, ghq, "macro-mon")
+    write(croot / "schedule-changes.yaml",
+          "changes:\n  - {n: 5, reason: 病気, cancel: true, date: 2027-10-25}\n")
+    assert section(run(desk, "--date", "2027-10-25"), "授業 2027-10-25") == ["- マクロ月・第 5 回 休講（未決）"]
 
 
 def test_review_without_accepted_line_is_not_accepted(desk, ghq):

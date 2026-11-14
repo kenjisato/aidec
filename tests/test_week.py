@@ -70,6 +70,25 @@ def test_broken_schedule_is_marked(year_dir, ghq):
     assert _mon_week(year_dir, ghq) == ["- 10/25（月） macro-mon 第 5 回（schedule.yaml を読めない）"]
 
 
+def test_session_missing_from_schedule_has_no_date(year_dir, ghq):
+    issue_schedule(year_dir, ghq, "macro-mon", lambda t: t.replace("  - {n: 5, date: 2027-10-25}\n", ""))
+    assert _mon_week(year_dir, ghq) == ["- 10/25（月） macro-mon 第 5 回 日付なし"]
+    out = [" ".join(ln.split()) for ln in day_table(load_year(year_dir), ghq, date(2027, 10, 25), 1).splitlines()]
+    assert out == ["10-25 Mon | macro-mon | Day 5 no date"]
+
+
+def test_moves_that_do_not_fit_mark_only_that_course(year_dir, ghq):
+    from dataclasses import replace
+    from aidec.data import Move
+    yd = load_year(year_dir)
+    yd = replace(yd, moves=[Move("macro-mon", 99, None, True)])     # 学事暦の日程に無い回
+    out = week_report(yd, ghq, date(2027, 10, 25), 1)
+    assert "- 10/25（月） macro-mon 第 5 回（moves.yaml が合わない）" in out
+    assert "- 10/27（水） seminar-wed 第 5 回（未配布）" in out
+    table = [" ".join(ln.split()) for ln in day_table(yd, ghq, date(2027, 10, 25), 1).splitlines()]
+    assert table == ["10-25 Mon | macro-mon | Day 5 (moves.yaml mismatch)"]
+
+
 def test_not_issued_uses_moves(year_dir, ghq):
     write(year_dir / "moves.yaml", "- {course: macro-mon, n: 5, cancelled: true}\n")
     add_class(year_dir, ghq, "macro-mon")                         # class root はあるが schedule.yaml が無い

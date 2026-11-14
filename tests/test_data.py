@@ -127,6 +127,14 @@ def test_course_class_id(year_dir):
     assert yd.courses[1].class_id is None
 
 
+@pytest.mark.parametrize("cls", ["../x", "a b", "'2027/mon3'", "[a]"])
+def test_bad_course_class_id(year_dir, cls):
+    write(year_dir / "courses.yaml",
+          f"- {{id: x, class: {cls}, calendar: univa, term: fall, slot: mon-1, sessions: 15}}\n")
+    with pytest.raises(DataError, match="class"):
+        load_year(year_dir)
+
+
 def test_moves_file_is_optional(year_dir):
     assert load_year(year_dir).moves == []
     assert load_moves(year_dir) == []

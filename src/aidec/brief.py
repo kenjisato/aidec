@@ -9,7 +9,7 @@ from . import courserepo, gitops, repos, yamlio
 from .cli import KNOWN_ERRORS, error, setup_console
 from .config import data_dir
 from .data import Course, YearData, load_year
-from .week import _md, _md_wd, _sessions, inbox_section, prep_days
+from .week import PENDING, _md, _md_wd, _sessions, inbox_section, prep_days
 
 DEADLINE_DAYS = 14
 PREP_DAYS = 21
@@ -50,7 +50,9 @@ def _todays_sessions(yd: YearData, ghq: Path, day: date) -> list[str]:
         cdir = _class_dir(yd, c, ghq)
         pattern = courserepo.layout(cdir)[0] if cdir else "{nn}"
         for s in ss:
-            if s.date == day:
+            if s.pending and s.change.date == day:
+                lines.append(f"- {c.name}・第 {s.n} 回 {PENDING}")
+            elif s.date == day:
                 title = _title(cdir, courserepo.session_dir(pattern, s.n)) if cdir else None
                 lines.append(f"- {c.name}・第 {s.n} 回" + (f"・{title}" if title else ""))
     return lines

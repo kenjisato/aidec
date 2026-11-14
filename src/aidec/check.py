@@ -38,13 +38,22 @@ def _is_class_or_makeup_day(cal: Calendar, d: date) -> bool:
     return cal.term_of(d) is not None and cal.weekday_of(d) in WEEKDAYS[:5]
 
 
-def check_course(course_id: str, cal: Calendar, expected: Dates, current: Dates) -> list[Problem]:
-    """(1) 配った日付が今の学事暦・moves から作り直したものと違う。(2) 日付が授業日でも補講日でもない。"""
+def check_course(course_id: str, cal: Calendar, computed: Dates, expected: Dates, current: Dates,
+                 decided: set[int]) -> list[Problem]:
+    """(1) 配った日付が今の学事暦・moves から作り直したものと違う。
+    (2) 移した日が授業日でも補講日でもない。計算した日の事実は undecided が受け持つ。
+    decided は moves か schedule-changes.yaml に書かれた回。事実のある回で、そのどちらにも無いものを出す。
+    """
     out = []
     if not expected.same_content(current):
         out.append(Problem(course_id, "stale", None, "配った schedule.yaml が今の学事暦・moves・予定と違う。issue を走らせる"))
+    for e in computed.dates:
+        if e.notes and e.n not in decided:
+            out.append(Problem(course_id, "undecided", e.date,
+                               f"第 {e.n} 回（{_md(e.date)}）: {'、'.join(e.notes)} への対応が無い"))
+    planned = {e.n: e.date for e in computed.dates}
     for e in current.dates:
-        if e.date is None:
+        if e.date is None or e.date == planned.get(e.n):
             continue
         if cal.is_closed(e.date):
             out.append(Problem(course_id, "closed_day", e.date,
@@ -100,15 +109,20 @@ def course_problems(yd: YearData, course: Course, ghq: Path) -> list[Problem]:
         return [Problem(course.id, "bad_schedule", None, str(e))]
     expected = build_dates(course, cal, yd.events, yd.moves, current.issued,
                            course_id=courserepo.course_id(croot))
-    out = check_course(course.id, cal, expected, current)
-    out += check_research_days(course.id, course.prep_on, computed, current, yd.research_days)
+    moved = {m.n for m in yd.moves if m.course == course.id}
+    out: list[Problem] = []
+    changes, ss = [], []
     try:
-        ss = sessions(computed, current, read_changes(croot / "schedule-changes.yaml"))
+        changes = read_changes(croot / "schedule-changes.yaml")
+        ss = sessions(computed, current, changes)
     except ScheduleError as e:
-        return out + [Problem(course.id, "bad_changes", None, " ".join(str(e).split()))]
-    # (3) 上げた休講の相談が、まだ schedule.yaml に返ってきていない
+        # 読めない changes は注意だけ。事実への対応は読めた分（読めなければ moves だけ）で見る
+        out.append(Problem(course.id, "bad_changes", None, " ".join(str(e).split()), soft=True))
+    out += check_course(course.id, cal, computed, expected, current, moved | {c.n for c in changes})
+    out += check_research_days(course.id, course.prep_on, computed, current, yd.research_days)
+    # (3) 上げた休講の相談が、まだ schedule.yaml に返ってきていない（待っている状態なので注意）
     out += [Problem(course.id, "pending_cancel", s.change.date,
-                    f"第 {s.n} 回（{_md(s.change.date)}）の休講が schedule.yaml にまだ返っていない")
+                    f"第 {s.n} 回（{_md(s.change.date)}）の休講が schedule.yaml にまだ返っていない", soft=True)
             for s in ss if s.pending]
     return out
 

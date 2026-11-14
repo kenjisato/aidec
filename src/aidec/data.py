@@ -15,6 +15,7 @@ _COURSE_KEYS = {"id", "repo", "calendar", "term", "slot", "sessions", "prep_on",
 _MOVE_KEYS = {"course", "n", "date", "cancelled", "notes", "ref"}
 _SETTINGS_KEYS = {"research_days"}
 _EVENT_KEYS = {"date", "end", "kind", "title", "prep", "note"}
+ID = re.compile(r"[A-Za-z0-9_-]+")       # 授業・class の id に使える文字
 
 
 class DataError(ValueError):
@@ -153,6 +154,10 @@ def _load_courses(path: Path, calendars: dict[str, Calendar]) -> list[Course]:
         repo = c.get("repo")
         if repo is not None and not _is_relative(str(repo)):
             raise DataError(f"{where}: repo は ghq root からの相対パスで書く: {repo}")
+        cls = c.get("class")
+        if cls is not None and not (isinstance(cls, (str, int)) and not isinstance(cls, bool)
+                                    and ID.fullmatch(str(cls))):
+            raise DataError(f"{where}.class: 英数字・_・- で書く: {cls!r}")
         try:
             slot = parse_slot(c["slot"])
         except PlanError as e:

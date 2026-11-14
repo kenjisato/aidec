@@ -16,11 +16,11 @@ from . import gitops, inbox, yamlio
 from .courserepo import class_dir
 from .courserepo import layout as _layout
 from .config import ConfigError, data_dir
+from .data import ID as _ID
 
 PROTOCOL = 1
 _DECLINED = {"protocol": PROTOCOL, "status": "declined"}
 _MAX_HITS = 10
-_ID = re.compile(r"[A-Za-z0-9_-]+")
 
 
 _RUNS = re.compile(r"[\u4e00-\u9fff々]+|[\u30a0-\u30ffー]+|[A-Za-z0-9]+")
