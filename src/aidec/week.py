@@ -88,7 +88,7 @@ def _overlaps(a: date, b: date, ws: date, we: date) -> bool:
 
 
 def week_report(yd: YearData, ghq: Path, start: date, weeks: int) -> str:
-    sessions = {c.id: _sessions(yd, c, ghq) for c in yd.courses}
+    by_course = {c.id: _sessions(yd, c, ghq) for c in yd.courses}
     first = start - timedelta(days=start.weekday())
     blocks = []
     for w in range(weeks):
@@ -96,7 +96,7 @@ def week_report(yd: YearData, ghq: Path, start: date, weeks: int) -> str:
         we = ws + timedelta(days=6)
         items: list[tuple[date, int, str]] = []
         for course in yd.courses:
-            ss, note = sessions[course.id]
+            ss, note = by_course[course.id]
             for s in ss:
                 d = _placed(s)
                 if d is None or not ws <= d <= we:
