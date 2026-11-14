@@ -1,77 +1,68 @@
-"""授業レポに schedule.yaml を配る。"""
+"""授業レポの class root に schedule.yaml を書く。"""
 from __future__ import annotations
 
 import argparse
 from datetime import date
 from pathlib import Path
 
-from . import gitops
+from . import courserepo, gitops
 from .cli import KNOWN_ERRORS, error, setup_console
 from .config import data_dir
 from .data import Course, YearData, load_year
-from .schedule import WorkdeskPart, build_part, read_part, write_issued_copy, write_part
+from .schedule import build_dates, write_dates
 
 
 class IssueError(RuntimeError):
     pass
 
 
-def _md(d: date) -> str:
-    return f"{d.month}/{d.day}"
-
-
 def _issue_course(yd: YearData, course: Course, root: Path, ghq: Path, today: date, dry_run: bool) -> None:
     cal = yd.calendar_for(course)
-    part = build_part(course, cal, yd.events, f"{today.isoformat()} (workdesk {gitops.head_sha(root)})")
+    issued = f"{today.isoformat()} ({gitops.head_sha(root)})"
+    repo = ghq / course.repo if course.repo else None
+    croot = courserepo.class_root(repo, course.class_id) if repo else None
+    dates = build_dates(course, cal, yd.events, yd.moves, issued,
+                        course_id=courserepo.course_id(croot) if croot else None)
     issued_path = yd.dir / "issued" / f"{course.id}.yaml"
 
     if dry_run:
-        print(f"== {course.id}（{course.term} {course.slot.weekday}-{course.slot.period}、{len(part.plan)} 回）")
-        for e in part.plan:
-            print(f"  第 {e.n} 回 {_md(e.date)}" + (f"  {'、'.join(e.facts)}" if e.facts else ""))
+        print(f"== {course.id}")
+        for e in dates.dates:
+            print(f"  {e.n} " + ("cancelled" if e.cancelled else e.date.isoformat())
+                  + (f"  {'、'.join(e.notes)}" if e.notes else ""))
         return
 
-    if course.repo is None:
-        print(f"{course.id}: 授業レポが無いので配らない")
+    if repo is None:
+        print(f"{course.id}: no repo")
         return
-    repo = ghq / course.repo
     if not repo.is_dir():
         raise IssueError(f"授業レポが見つからない: {repo}")
-    rel = f"{yd.year}/schedule.yaml"
-    if gitops.is_dirty(repo, rel):
-        raise IssueError(f"{rel} に未コミットの変更がある。先にコミットするか戻す")
-    upstream = gitops.has_upstream(repo)
-    if upstream:
-        gitops.pull_ff_only(repo)
-        # 授業レポの未送信の仕事を一緒に push しない。schedule.yaml だけのもの（前回の送り損ねなど）は送ってよい
-        others = sorted(gitops.unpushed_files(repo) - {rel})
-        if others:
-            raise IssueError(f"授業レポに push していないコミットがある（{', '.join(others[:5])}"
-                             f"{' ほか' if len(others) > 5 else ''}）。先に送るか確かめてから配る")
+    if croot is None:
+        print(f"{course.id}: no class root")
+        return
+    # director は sessions.base の作業ツリーから日程を読む。別の枝には書かない
+    base = courserepo.base_branch(courserepo.team(repo, croot)) or "main"
+    if gitops.current_branch(repo) != base:
+        print(f"{course.id}: not on {base}")
+        return
 
-    target = repo / rel
-    current = read_part(target) if target.exists() else None      # changes が壊れていても配れるよう、上半分だけを読む
-    if current is not None and current.same_content(part):
-        print(f"{course.id}: 配った版から変わりなし")
-        part = WorkdeskPart(part.course, current.issued, part.plan, part.makeup_days)
+    target = croot / "schedule.yaml"
+    rel = target.relative_to(repo).as_posix()
+    # 授業レポでは書くだけ。コミットは director がする
+    if write_dates(target, dates):
+        print(f"{course.id}: written {rel}")
     else:
-        write_part(target, part)
-        gitops.commit_paths(repo, [rel], f"workdesk: {rel} を配る ({part.issued})")
-        print(f"{course.id}: {rel} を配った")
-    # 前の回に push が失敗したコミットも、ここで送る
-    if upstream and gitops.is_ahead(repo):
-        gitops.push(repo)
+        print(f"{course.id}: unchanged")
 
-    write_issued_copy(issued_path, part)
-    paths = [issued_path.relative_to(root).as_posix()]
-    gitops.commit_paths(root, paths, f"issue: {course.id} に {rel} を配る")
+    write_dates(issued_path, dates)
+    gitops.commit_paths(root, [issued_path.relative_to(root).as_posix()], f"issue: {course.id} の写し")
     if gitops.has_upstream(root) and gitops.is_ahead(root):
         gitops.push(root)
 
 
 def main(argv: list[str] | None = None) -> int:
     setup_console()
-    ap = argparse.ArgumentParser(prog="aidec issue", description="授業レポに schedule.yaml を配る")
+    ap = argparse.ArgumentParser(prog="aidec issue", description="授業レポに schedule.yaml を書く")
     ap.add_argument("year", type=int)
     ap.add_argument("--course", action="append", help="配る授業の id。何度でも書ける。省くと全部")
     ap.add_argument("--today", type=date.fromisoformat, default=date.today())

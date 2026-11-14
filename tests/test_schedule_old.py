@@ -6,7 +6,7 @@ import pytest
 from conftest import write
 from aidec.data import load_year
 from aidec.schedule import (Change, ScheduleError, build_part, effective_sessions, facts_for,
-                               load_schedule, read_part, write_issued_copy, write_part)
+                               load_schedule, read_part, write_part)
 
 
 @pytest.fixture
@@ -114,12 +114,6 @@ def test_rewrite_keeps_comment_on_top_and_unknown_keys(tmp_path, yd, mon_part):
     after = _rewrite_after(p, yd)
     assert after.startswith("# この授業の日程（2027 後期）\ncourse: macro-mon\n")
     assert after.endswith("memo: 授業側のメモ  # 残す\n")
-
-
-def test_issued_copy_round_trip(tmp_path, mon_part):
-    p = tmp_path / "issued" / "macro-mon.yaml"
-    write_issued_copy(p, mon_part)
-    assert read_part(p) == mon_part
 
 
 def test_same_content_ignores_issued(yd, mon_part):

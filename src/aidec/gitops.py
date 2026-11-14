@@ -23,6 +23,11 @@ def head_sha(repo: Path) -> str:
     return git(repo, "rev-parse", "--short", "HEAD").strip()
 
 
+def current_branch(repo: Path) -> str:
+    """今の枝の名前。detached HEAD なら空文字。"""
+    return git(repo, "branch", "--show-current").strip()
+
+
 def has_upstream(repo: Path) -> bool:
     try:
         git(repo, "rev-parse", "--abbrev-ref", "@{u}")

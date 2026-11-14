@@ -161,12 +161,6 @@ def write_part(path: Path, part: WorkdeskPart) -> None:
         f.write(out)
 
 
-def write_issued_copy(path: Path, part: WorkdeskPart) -> None:
-    data = CommentedMap()
-    _set_part(data, part)
-    yamlio.dump(data, path)
-
-
 def _part_from_map(data, where: str) -> WorkdeskPart:
     if not isinstance(data, dict):
         raise ScheduleError(f"{where}: 対応づけ（course: ... の形）になっていない")
