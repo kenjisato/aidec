@@ -307,8 +307,12 @@ class Dates:
         return replace(self, issued="") == replace(other, issued="")
 
 
-def build_dates(course: Course, cal: Calendar, events: list[Event], moves: list[Move], issued: str) -> Dates:
-    """学事暦で各回の日を出し、moves（この授業の分）で日付を置き換えるか cancelled にする。"""
+def build_dates(course: Course, cal: Calendar, events: list[Event], moves: list[Move], issued: str,
+                *, course_id: str | None = None) -> Dates:
+    """学事暦で各回の日を出し、moves（この授業の分）で日付を置き換えるか cancelled にする。
+
+    course_id は書く course: の値（class root の course.yaml の course.id）。無ければ courses.yaml の id。
+    """
     by_n = {m.n: m for m in moves if m.course == course.id}
     entries = []
     for s in plan_sessions(cal, course.term, course.slot, course.sessions):
@@ -322,7 +326,7 @@ def build_dates(course: Course, cal: Calendar, events: list[Event], moves: list[
     if by_n:
         raise ScheduleError(f"{course.id}: moves の第 {min(by_n)} 回は学事暦の日程に無い")
     span = cal.terms[course.term]
-    return Dates(course.id, course.class_id, issued, tuple(entries),
+    return Dates(course_id or course.id, course.class_id, issued, tuple(entries),
                  tuple(d for d in cal.makeup_days if d in span))
 
 
@@ -383,7 +387,7 @@ def read_dates(path: Path) -> Dates:
     for i, e in enumerate(data["dates"]):
         at = f"{where}: dates[{i}]"
         form = f"{at}: {{n: 1, date: YYYY-MM-DD}} か {{n: 1, cancelled: true}} の形で書く"
-        if not isinstance(e, dict) or not _is_int(e.get("n")):
+        if not isinstance(e, dict) or not _is_int(e.get("n")) or e["n"] < 1:
             raise ScheduleError(form)
         unknown = set(e) - _DATE_ENTRY_KEYS
         if unknown:
@@ -506,6 +510,6 @@ def sessions(computed: Dates, current: Dates, changes: list[ScheduleChange]) -> 
                 pending, d = True, None
         elif c is not None and c.mode == "ondemand" and d is not None:
             d = c.release
-        out.append(ClassSession(e.n, e.date, d, c.mode if c else None, cancelled,
+        out.append(ClassSession(e.n, e.date, d, c.mode if c and not cancelled else None, cancelled,
                                 cur.notes if cur else (), c, pending))
     return out

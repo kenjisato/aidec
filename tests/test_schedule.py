@@ -81,6 +81,18 @@ def test_write_and_read_back(tmp_path, yd, mon):
     assert read_dates(p) == d
 
 
+def test_course_is_the_class_roots_course_id(tmp_path, yd, mon):
+    from aidec.courserepo import class_root, course_id
+    repo = tmp_path / "macro-mon"
+    write(repo / "classes" / "2027-mon3" / "course.yaml",
+          "course: {id: macro-2027}\nclasses:\n  - {id: 2027-mon3, destinations: [{to: manual}]}\n")
+    root = class_root(repo, mon.class_id)
+    d = build_dates(mon, yd.calendar_for(mon), yd.events, [], ISSUED, course_id=course_id(root))
+    assert write_dates(root / "schedule.yaml", d) is True
+    assert (root / "schedule.yaml").read_text(encoding="utf-8").startswith("course: macro-2027\nclass: 2027-mon3\n")
+    assert _build(yd, mon).course == "macro-mon"          # class root が無いとき（dry-run）は courses.yaml の id
+
+
 def test_write_skips_same_content(tmp_path, yd, mon):
     p = tmp_path / "schedule.yaml"
     assert write_dates(p, _build(yd, mon)) is True
@@ -143,6 +155,7 @@ def test_read_dates_spec_example(tmp_path):
     ("  - {n: 1, date: 2026-04-13}\n", "  - {n: 1, date: 2026-04-13, cancelled: true}\n", r"dates\[0\]"),
     ("  - {n: 1, date: 2026-04-13}\n", "  - {n: 1, date: 2026/04/13}\n", r"dates\[0\]"),
     ("  - {n: 1, date: 2026-04-13}\n", "  - {n: 2, date: 2026-04-13}\n", "第 2 回が二度"),
+    ("  - {n: 1, date: 2026-04-13}\n", "  - {n: 0, date: 2026-04-13}\n", r"dates\[0\]"),
     ("  - {n: 1, date: 2026-04-13}\n", "  - {n: 1, date: 2026-04-13, room: B}\n", "room"),
     ("makeup_days: [2026-07-27, 2026-08-03]\n", "makeup_days: [soon]\n", "makeup_days"),
 ])
@@ -231,6 +244,13 @@ def test_cancel_settled_by_new_date_is_not_pending(tmp_path):
     s = {x.n: x for x in sessions(_computed(), current,
                                   [ScheduleChange(4, "x", cancel=True, date=date(2026, 5, 4))])}
     assert (s[4].date, s[4].pending) == (date(2026, 7, 27), False)
+
+
+def test_cancelled_session_has_no_mode(tmp_path):
+    current = read_dates(write(tmp_path / "schedule.yaml", SCHEDULE))
+    s = {x.n: x for x in sessions(_computed(), current, [ScheduleChange(3, "x", mode="online")])}
+    assert (s[3].cancelled, s[3].mode, s[3].date) == (True, None, None)
+    assert s[3].change is not None
 
 
 def test_change_for_unlisted_session_is_an_error(tmp_path):

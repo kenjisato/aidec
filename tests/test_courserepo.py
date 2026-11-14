@@ -1,11 +1,12 @@
 import pytest
 
 from conftest import write
-from aidec.courserepo import base_branch, class_dir, class_root, layout, team
+from aidec.courserepo import base_branch, class_dir, class_root, course_id, layout, team
 
+# IK の course.id（macro-2027）は courses.yaml の id（macro-mon）と別のもの。日程の course: には前者を書く
 COURSE_YAML = """\
 course:
-  id: macro
+  id: macro-2027
 classes:
   - id: 2027-mon3
     destinations: [{to: manual}]
@@ -23,7 +24,7 @@ def test_class_root(repo):
 
 
 @pytest.mark.parametrize("text", [
-    "course: {id: macro}\n",                                                     # classes が無い
+    "course: {id: macro-2027}\n",                                                     # classes が無い
     COURSE_YAML + "  - id: 2027-wed2\n    destinations: [{to: manual}]\n",       # 2 つある
     COURSE_YAML.replace("2027-mon3", "2027-tue1"),                               # id が違う
     "course: [\n",                                                               # 読めない
@@ -31,6 +32,13 @@ def test_class_root(repo):
 def test_class_root_none(repo, text):
     write(repo / "classes" / "2027-mon3" / "course.yaml", text)
     assert class_root(repo, "2027-mon3") is None
+
+
+def test_course_id(repo):
+    root = repo / "classes" / "2027-mon3"
+    assert course_id(root) is None
+    write(root / "course.yaml", COURSE_YAML)
+    assert course_id(root) == "macro-2027"
 
 
 def test_class_root_ignores_year_dir(repo):
@@ -48,7 +56,7 @@ def test_class_dir(repo):
 
 def test_new_layout_reads_team_from_course_root_and_packet(repo):
     cdir = repo / "classes" / "2027-mon3"
-    write(repo / "team.yaml", "course_id: macro\nsessions: {base: develop}\n")
+    write(repo / "team.yaml", "course_id: macro-2027\nsessions: {base: develop}\n")
     write(cdir / "packet.yaml", "sessions: {dir: 'sessions/{nn}', map: plan/map.md}\n")
     doc = team(repo, cdir)
     assert base_branch(doc) == "develop"

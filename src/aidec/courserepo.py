@@ -20,6 +20,13 @@ def _load_map(path: Path) -> dict:
     return {}
 
 
+def course_id(root: Path) -> str | None:
+    """<root>/course.yaml の course.id（IK の id。courses.yaml の id とは別）。"""
+    course = _load_map(root / "course.yaml").get("course")
+    cid = course.get("id") if isinstance(course, dict) else None
+    return str(cid) if cid else None
+
+
 def class_root(repo: Path, class_id: str | None) -> Path | None:
     """日程を置く class root。classes/<class_id>/ だけを見る（<年度>/ は見ない）。
 
